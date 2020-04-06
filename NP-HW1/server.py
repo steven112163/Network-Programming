@@ -1,5 +1,6 @@
 import threading
 import sys
+import sqlite3
 from socketserver import ThreadingTCPServer, StreamRequestHandler
 
 
@@ -17,6 +18,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
         print('New connection')
         self.wfile.write(bytes('# ', 'utf-8'))
+        self.current_user = None
         while True:
             try:
                 command = str(self.rfile.readline(), 'utf-8').strip().split()
@@ -53,7 +55,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: Command sent from client
         :return: None
         """
-        pass
+        if len(command) != 4:
+            self.wfile.write(bytes('Usage: register <username> <email> <password>\n', 'utf-8'))
 
     def login_handler(self, command):
         """
@@ -61,7 +64,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: Command sent from client
         :return: None
         """
-        pass
+        if len(command) != 3:
+            self.wfile.write(bytes('Usage: login <username> <password>\n', 'utf-8'))
 
     def logout_handler(self, command):
         """
@@ -69,7 +73,11 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: Command sent from client
         :return: None
         """
-        pass
+        if self.current_user:
+            self.wfile.write(bytes(f'Bye, {self.current_user}.\n', 'utf-8'))
+            self.current_user = None
+        else:
+            self.wfile.write(bytes('Please login first\n', 'utf-8'))
 
     def whoami_handler(self, command):
         """
@@ -77,7 +85,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: Command sent from client
         :return: None
         """
-        pass
+        if self.current_user:
+            self.wfile.write(bytes(f'{self.current_user}\n', 'utf-8'))
+        else:
+            self.wfile.write(bytes('Please login first\n', 'utf-8'))
 
 
 def main():
@@ -86,16 +97,28 @@ def main():
     Setup with ./server <port>
     :return: None
     """
-    if len(sys.argv) != 2:
-        print("Usage: ./server <port>")
-        return
 
+    # Check arguments
+    if len(sys.argv) != 2:
+        print("Usage: python3 ./server.py <port>")
+        return
     host = 'localhost'
     try:
         port = int(sys.argv[1])
     except:
-        print("Usage: ./server <port>")
+        print("Usage: python3 ./server.py <port>")
         return
+
+    # Create database and table
+    conn = sqlite3.connect('server_0510002.db')
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="users";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE users (
+                            username TEXT PRIMARY KEY NOT NULL,
+                            email    TEXT NOT NULL,
+                            password TEXT NOT NULL
+                        );''')
+    conn.close()
 
     ThreadingTCPServer.allow_reuse_address = True
     ThreadingTCPServer.daemon_threads = True

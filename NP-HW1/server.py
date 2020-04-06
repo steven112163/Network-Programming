@@ -162,7 +162,6 @@ def main():
     ThreadingTCPServer.allow_reuse_address = True
     ThreadingTCPServer.daemon_threads = True
     with ThreadingTCPServer((host, port), ThreadedServerHandler) as server:
-        print("Server loop running")
         try:
             server.serve_forever()
         except KeyboardInterrupt:

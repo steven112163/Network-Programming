@@ -49,8 +49,6 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.logout_handler(command)
         elif command[0] == 'whoami':
             self.whoami_handler(command)
-        else:
-            self.wfile.write(bytes('Invalid command\n', 'utf-8'))
 
     def register_handler(self, command):
         """

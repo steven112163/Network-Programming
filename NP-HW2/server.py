@@ -80,7 +80,6 @@ class ThreadedServerHandler(StreamRequestHandler):
         elif command[0] == 'comment':
             self.command_handler(command)
         else:
-            self.wfile.write(bytes('Invalid command\n', 'utf-8'))
             self.debug(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
     def register_handler(self, command):

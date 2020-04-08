@@ -63,6 +63,22 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.logout_handler(command)
         elif command[0] == 'whoami':
             self.whoami_handler(command)
+        elif command[0] == 'create-board':
+            self.create_board_handler(command)
+        elif command[0] == 'create-post':
+            self.create_post_handler(command)
+        elif command[0] == 'list-board':
+            self.list_board_handler(command)
+        elif command[0] == 'list-post':
+            self.list_post_handler(command)
+        elif command[0] == 'read':
+            self.read_handler(command)
+        elif command[0] == 'delete-post':
+            self.delete_post_handler(command)
+        elif command[0] == 'update-post':
+            self.update_post_handler(command)
+        elif command[0] == 'comment':
+            self.command_handler(command)
         else:
             self.wfile.write(bytes('Invalid command\n', 'utf-8'))
             self.debug(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
@@ -158,6 +174,70 @@ class ThreadedServerHandler(StreamRequestHandler):
         else:
             self.wfile.write(bytes('Please login first.\n', 'utf-8'))
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+
+    def create_board_handler(self, command):
+        """
+        Function handling create-board command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def create_post_handler(self, command):
+        """
+        Function handling create-post command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def list_board_handler(self, command):
+        """
+        Function handling list-board command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def list_post_handler(self, command):
+        """
+        Function handling list-post command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'List-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def read_handler(self, command):
+        """
+        Function handling read command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Read from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def delete_post_handler(self, command):
+        """
+        Function handling delete-post command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Delete-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def update_post_handler(self, command):
+        """
+        Function handling update-post command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Update-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def comment_handler(self, command):
+        """
+        Function handling comment command
+        :param command: Command sent from client
+        :return: None
+        """
+        self.debug(f'Comment from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
 
 def parse_arguments():

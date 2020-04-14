@@ -1,0 +1,48 @@
+# Network-Programming HW2
+HW2 of Network Programming
+
+
+
+## Tables
+### Users
+```sqlite
+CREATE TABLE USERS(
+    UID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Username TEXT NOT NULL UNIQUE,
+    Email TEXT NOT NULL,
+    Password TEXT NOT NULL
+);
+```
+
+### Boards
+```sqlite
+CREATE TABLE BOARDS(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    BoardName TEXT NOT NULL UNIQUE,
+    Moderator TEXT NOT NULL,
+    FOREIGN KEY(Moderator) REFERENCES USERS(Username)
+);
+```
+
+### Posts
+```sqlite
+CREATE TABLE POSTS(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    BoardName TEXT NOT NULL,
+    Title TEXT NOT NULL,
+    Author TEXT NOT NULL,
+    PostDate TEXT NOT NULL,
+    FOREIGN KEY(BoardName) REFERENCES BOARDS(BoardName),
+    FOREIGN KEY(Author) REFERENCES USERS(Username)
+);
+```
+
+### Comments
+```sqlite
+CREATE TABLE COMMENTS(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Username TEXT NOT NULL,
+    Comment TEXT NOT NULL,
+    FOREIGN KEY(Username) REFERENCES USERS(Username)
+);
+```

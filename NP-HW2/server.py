@@ -93,7 +93,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.debug(f'Register from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 4:
             self.wfile.write(bytes('Usage: register <username> <email> <password>\n', 'utf-8'))
-            self.debug(f'Incomplete register command from {self.client_address}({self.client_address})')
+            self.debug(f'Incomplete register command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether username is used
@@ -181,6 +181,28 @@ class ThreadedServerHandler(StreamRequestHandler):
         :return: None
         """
         self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        if len(command) != 2:
+            self.wfile.write(bytes('Usage: create-board <name>\n', 'utf-8'))
+            self.debug(f'Incomplete create-board command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
+                                   {"board_name": command[1]})
+        if cursor.fetchone() is not None:
+            self.wfile.write(bytes('Board is already exist.\n', 'utf-8'))
+            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) exists')
+            return
+
+        self.conn.execute('INSERT INTO BOARDS (BoardName, Moderator) VALUES (:board_name, :moderator)',
+                          {"board_name": command[1], "moderator": self.current_user})
+        self.conn.commit()
+        self.wfile.write(bytes('Create Board successfully.\n', 'utf-8'))
+        self.debug(f'Board created successfully from {self.client_address[0]}({self.client_address[1]})')
 
     def create_post_handler(self, command):
         """
@@ -197,6 +219,26 @@ class ThreadedServerHandler(StreamRequestHandler):
         :return: None
         """
         self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+        if len(command) > 2:
+            self.wfile.write(bytes('Usage: list-board ##<key>\n', 'utf-8'))
+            self.debug(f'Incomplete list-board command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        elif len(command) == 2:
+            key_word = command[1][2:]
+            key_word = '%' + key_word + '%'
+        else:
+            key_word = None
+
+        if key_word:
+            cursor = self.conn.execute("SELECT ID, BoardName, Moderator FROM BOARDS WHERE BoardName LIKE :key_word",
+                                       {"key_word": key_word})
+        else:
+            cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
+
+        self.wfile.write(bytes('\tIndex\tName\tModerator\n', 'utf-8'))
+        for row in cursor:
+            self.wfile.write(bytes(f'\t{row["ID"]}\t{row["BoardName"]}\t{row["Moderator"]}\n', 'utf-8'))
 
     def list_post_handler(self, command):
         """
@@ -273,6 +315,15 @@ if __name__ == '__main__':
                             Username TEXT UNIQUE NOT NULL,
                             Email    TEXT NOT NULL,
                             Password TEXT NOT NULL
+                        );''')
+
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="BOARDS";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE BOARDS(
+                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            BoardName TEXT NOT NULL UNIQUE,
+                            Moderator TEXT NOT NULL,
+                            FOREIGN KEY(Moderator) REFERENCES USERS(Username)
                         );''')
     conn.close()
 

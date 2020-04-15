@@ -85,7 +85,7 @@ class ThreadedServerHandler(StreamRequestHandler):
     def register_handler(self, command):
         """
         Function handling register command
-        :param command: Command sent from client
+        :param command: register <username> <email> <password
         :return: None
         """
 
@@ -112,7 +112,7 @@ class ThreadedServerHandler(StreamRequestHandler):
     def login_handler(self, command):
         """
         Function handling login command
-        :param command: Command sent from client
+        :param command: login <username> <password>
         :return: None
         """
 
@@ -148,10 +148,11 @@ class ThreadedServerHandler(StreamRequestHandler):
     def logout_handler(self, command):
         """
         Function handling logout command
-        :param command: Command sent from client
+        :param command: logout
         :return: None
         """
         self.debug(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
         if self.current_user:
             self.wfile.write(bytes(f'Bye, {self.current_user}.\n', 'utf-8'))
             self.current_user = None
@@ -163,10 +164,11 @@ class ThreadedServerHandler(StreamRequestHandler):
     def whoami_handler(self, command):
         """
         Function handling whoami command
-        :param command: Command sent from client
+        :param command: whoami
         :return: None
         """
         self.debug(f'Whoami from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
         if self.current_user:
             self.wfile.write(bytes(f'{self.current_user}.\n', 'utf-8'))
             self.debug(f'Current user check from {self.client_address[0]}({self.client_address[1]})')
@@ -177,49 +179,56 @@ class ThreadedServerHandler(StreamRequestHandler):
     def create_board_handler(self, command):
         """
         Function handling create-board command
-        :param command: Command sent from client
+        :param command: create-board <name>
         :return: None
         """
-        self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
-        if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
-            return
 
+        # Check arguments
+        self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
             self.wfile.write(bytes('Usage: create-board <name>\n', 'utf-8'))
             self.debug(f'Incomplete create-board command from {self.client_address[0]}({self.client_address[1]})')
             return
 
+        # Check whether user is logged in
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether board exists
         cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
                                    {"board_name": command[1]})
         if cursor.fetchone() is not None:
-            self.wfile.write(bytes('Board is already exist.\n', 'utf-8'))
+            self.wfile.write(bytes('Board already exist.\n', 'utf-8'))
             self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) exists')
             return
 
+        # Create new board
         self.conn.execute('INSERT INTO BOARDS (BoardName, Moderator) VALUES (:board_name, :moderator)',
                           {"board_name": command[1], "moderator": self.current_user})
         self.conn.commit()
-        self.wfile.write(bytes('Create Board successfully.\n', 'utf-8'))
+        self.wfile.write(bytes('Create board successfully.\n', 'utf-8'))
         self.debug(f'Board created successfully from {self.client_address[0]}({self.client_address[1]})')
 
     def create_post_handler(self, command):
         """
         Function handling create-post command
-        :param command: Command sent from client
+        :param command: create-post <board-name> --title <title> --content <content>
         :return: None
         """
         self.debug(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        # TODO
 
     def list_board_handler(self, command):
         """
         Function handling list-board command
-        :param command: Command sent from client
+        :param command: list-board ##<key>
         :return: None
         """
-        self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
+        # Check arguments
+        self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) > 2:
             self.wfile.write(bytes('Usage: list-board ##<key>\n', 'utf-8'))
             self.debug(f'Incomplete list-board command from {self.client_address[0]}({self.client_address[1]})')
@@ -230,55 +239,180 @@ class ThreadedServerHandler(StreamRequestHandler):
         else:
             key_word = None
 
+        # Get boards based on given key word
         if key_word:
-            cursor = self.conn.execute("SELECT ID, BoardName, Moderator FROM BOARDS WHERE BoardName LIKE :key_word",
+            cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS WHERE BoardName LIKE :key_word',
                                        {"key_word": key_word})
         else:
             cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
 
+        # Show boards
         self.wfile.write(bytes('\tIndex\tName\tModerator\n', 'utf-8'))
-        for row in cursor:
-            self.wfile.write(bytes(f'\t{row["ID"]}\t{row["BoardName"]}\t{row["Moderator"]}\n', 'utf-8'))
+        for board in cursor:
+            self.wfile.write(bytes(f'\t{board["ID"]}\t{board["BoardName"]}\t{board["Moderator"]}\n', 'utf-8'))
 
     def list_post_handler(self, command):
         """
         Function handling list-post command
-        :param command: Command sent from client
+        :param command: list-post <board-name> ##<key>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'List-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) > 3 or len(command) == 1:
+            self.wfile.write(bytes('Usage: list-post <board-name> ##<key>\n', 'utf-8'))
+            self.debug(f'Incomplete list-post command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        elif len(command) == 3:
+            key_word = command[2][2:]
+            key_word = '%' + key_word + '%'
+        else:
+            key_word = None
+
+        # Check whether given board exists
+        cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
+                                   {"board_name": command[1]})
+        if cursor.fetchone() is None:
+            self.wfile.write(bytes('Board does not exist.\n', 'utf-8'))
+            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get posts based on given board name and key word
+        if key_word:
+            cursor = self.conn.execute(
+                'SELECT ID, Title, Author, PostDate FROM POSTS WHERE BoardName=:board_name AND Title LIKE :key_word',
+                {"board_name": command[1], "key_word": key_word})
+        else:
+            cursor = self.conn.execute('SELECT ID, Title, Author, PostDate FROM POSTS WHERE BoardName=:board_name',
+                                       {"board_name": command[1]})
+
+        # Show posts
+        self.wfile.write(bytes('\tID\tTitle\tAuthor\tDate\n', 'utf-8'))
+        for post in cursor:
+            split_date = post["PostDate"].split('-')
+            date = split_date[1] + '/' + split_date[2]
+            self.wfile.write(bytes(f'\t{post["ID"]}\t{post["Title"]}\t{post["Author"]}\t{date}\n', 'utf-8'))
 
     def read_handler(self, command):
         """
         Function handling read command
-        :param command: Command sent from client
+        :param command: read <post-id>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'Read from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 2:
+            self.wfile.write(bytes('Usage: read <post-id>\n', 'utf-8'))
+            self.debug(f'Incomplete read command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether post exists
+        cursor = self.conn.execute('SELECT Author, Title, PostDate, Content FROM POSTS WHERE ID=:id',
+                                   {"id": command[1]})
+        post = cursor.fetchone()
+        if post is None:
+            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.debug(f'Post ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get comments in the post
+        cursor = self.conn.execute('SELECT Username, Comment FROM COMMENTS WHERE PostID=:id', {"id": command[1]})
+
+        # Show the post and its comments
+        self.wfile.write(bytes(
+            f'Author\t:{post["Author"]}\n'
+            f'Title\t:{post["Title"]}\n'
+            f'Date\t:{post["PostDate"]}\n'
+            f'--\n{post["Content"]}\n--\n',
+            'utf-8'))
+        for comment in cursor:
+            self.wfile.write(bytes(f'{comment["Username"]}: {comment["Comment"]}', 'utf-8'))
 
     def delete_post_handler(self, command):
         """
         Function handling delete-post command
-        :param command: Command sent from client
+        :param command: delete-post <post-id>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'Delete-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 2:
+            self.wfile.write(bytes('Usage: delete-post <post-id>\n', 'utf-8'))
+            self.debug(f'Incomplete delete-post command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether post exists
+        cursor = self.conn.execute('SELECT ID, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
+        post = cursor.fetchone()
+        if post is None:
+            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Check whether user is the post owner
+        if post["Author"] != self.current_user:
+            self.wfile.write(bytes('Not the post owner.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
+            return
+
+        # Delete post and its comments
+        self.conn.execute('DELETE FROM COMMENTS WHERE PostID=:id', {"id": command[1]})
+        self.conn.commit()
+        self.conn.execute('DELETE FROM POSTS WHERE ID=:id', {"id": command[1]})
+        self.conn.commit()
+        self.wfile.write(bytes('Delete successfully.\n', 'utf-8'))
 
     def update_post_handler(self, command):
         """
         Function handling update-post command
-        :param command: Command sent from client
+        :param command: update-post <post-id> --title/content <new>
         :return: None
         """
         self.debug(f'Update-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        # TODO
 
     def comment_handler(self, command):
         """
         Function handling comment command
-        :param command: Command sent from client
+        :param command: comment <post-id> <comment>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'Comment from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) < 3:
+            self.wfile.write(bytes('Usage: comment <post-id> <comment>\n', 'utf-8'))
+            self.debug(f'Incomplete comment command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether post exists
+        cursor = self.conn.execute('SELECT ID FROM POSTS WHERE ID=:id', {"id": command[1]})
+        if cursor.fetchone() is None:
+            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Create comment
+        comment = ' '.join(command[2:])
+        self.conn.execute('INSERT INTO COMMENTS (PostID, Username, Comment) VALUES (:id, :username, :comment)',
+                          {"id": command[1], "username": self.current_user, "comment": comment})
+        self.conn.commit()
+        self.wfile.write(bytes('Comment successfully.\n', 'utf-8'))
 
 
 def parse_arguments():
@@ -324,6 +458,30 @@ if __name__ == '__main__':
                             BoardName TEXT NOT NULL UNIQUE,
                             Moderator TEXT NOT NULL,
                             FOREIGN KEY(Moderator) REFERENCES USERS(Username)
+                        );''')
+
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="POSTS";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE POSTS(
+                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            BoardName TEXT NOT NULL,
+                            Title TEXT NOT NULL,
+                            Content TEXT NOT NULL,
+                            Author TEXT NOT NULL,
+                            PostDate TEXT NOT NULL,
+                            FOREIGN KEY(BoardName) REFERENCES BOARDS(BoardName),
+                            FOREIGN KEY(Author) REFERENCES USERS(Username)
+                        );''')
+
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="COMMENTS";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE COMMENTS(
+                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            PostID INTEGER NOT NULL,
+                            Username TEXT NOT NULL,
+                            Comment TEXT NOT NULL,
+                            FOREIGN KEY(PostID) REFERENCES POSTS(ID),
+                            FOREIGN KEY(Username) REFERENCES USERS(Username)
                         );''')
     conn.close()
 

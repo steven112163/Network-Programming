@@ -20,9 +20,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.debug(f'Connection from {self.client_address[0]}({self.client_address[1]})')
         self.conn = sqlite3.connect('server_0510002.db')
         self.conn.row_factory = sqlite3.Row
-        self.wfile.write(bytes(
-            '********************************\n** Welcome to the BBS server. **\n********************************\n',
-            'utf-8'))
+        self.send(
+            '********************************\n** Welcome to the BBS server. **\n********************************')
         self.wfile.write(bytes('% ', 'utf-8'))
         self.current_user = None
         while True:
@@ -37,6 +36,14 @@ class ThreadedServerHandler(StreamRequestHandler):
                 self.wfile.write(bytes('% ', 'utf-8'))
             except Exception as e:
                 print(str(e))
+
+    def send(self, msg):
+        """
+        Send message to user
+        :param msg: message
+        :return: None
+        """
+        self.wfile.write(bytes(f'{msg}\n', 'utf-8'))
 
     def debug(self, log):
         """
@@ -92,21 +99,21 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Register from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 4:
-            self.wfile.write(bytes('Usage: register <username> <email> <password>\n', 'utf-8'))
+            self.send('Usage: register <username> <email> <password>')
             self.debug(f'Incomplete register command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether username is used
         cursor = self.conn.execute('SELECT username from USERS WHERE Username=:username', {"username": command[1]})
         if cursor.fetchone() is not None:
-            self.wfile.write(bytes('Username is already used.\n', 'utf-8'))
+            self.send('Username is already used.')
             self.debug(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
             return
 
         self.conn.execute('INSERT INTO USERS (Username, Email, Password) VALUES (:username, :email, :password)',
                           {"username": command[1], "email": command[2], "password": command[3]})
         self.conn.commit()
-        self.wfile.write(bytes('Register successfully.\n', 'utf-8'))
+        self.send('Register successfully.')
 
     def login_handler(self, command):
         """
@@ -118,13 +125,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Login from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 3:
-            self.wfile.write(bytes('Usage: login <username> <password>\n', 'utf-8'))
+            self.send('Usage: login <username> <password>')
             self.debug(f'Incomplete login command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check if user is already logged in
         if self.current_user:
-            self.wfile.write(bytes(f'Please logout first.\n', 'utf-8'))
+            self.send('Please logout first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged in')
             return
 
@@ -132,16 +139,16 @@ class ThreadedServerHandler(StreamRequestHandler):
                                    {"username": command[1]})
         row = cursor.fetchone()
         if row is None:
-            self.wfile.write(bytes('Login failed.\n', 'utf-8'))
+            self.send('Login failed.')
             self.debug(f"Username entered from {self.client_address[0]}({self.client_address[1]}) isn't in DB")
             return
         if command[2] != row['Password']:
-            self.wfile.write(bytes('Login failed.\n', 'utf-8'))
+            self.send('Login failed.')
             self.debug(f'Password entered from {self.client_address[0]}({self.client_address[1]}) is wrong')
             return
 
         self.current_user = row['Username']
-        self.wfile.write(bytes(f'Welcome, {self.current_user}.\n', 'utf-8'))
+        self.send(f'Welcome, {self.current_user}.')
 
     def logout_handler(self, command):
         """
@@ -152,11 +159,11 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.debug(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
-            self.wfile.write(bytes(f'Bye, {self.current_user}.\n', 'utf-8'))
+            self.send(f'Bye, {self.current_user}.')
             self.current_user = None
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
         else:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
     def whoami_handler(self, command):
@@ -168,10 +175,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.debug(f'Whoami from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
-            self.wfile.write(bytes(f'{self.current_user}.\n', 'utf-8'))
+            self.send(f'{self.current_user}.')
             self.debug(f'Current user check from {self.client_address[0]}({self.client_address[1]})')
         else:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
     def create_board_handler(self, command):
@@ -184,13 +191,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
-            self.wfile.write(bytes('Usage: create-board <name>\n', 'utf-8'))
+            self.send('Usage: create-board <name>')
             self.debug(f'Incomplete create-board command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
@@ -198,7 +205,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
                                    {"board_name": command[1]})
         if cursor.fetchone() is not None:
-            self.wfile.write(bytes('Board already exist.\n', 'utf-8'))
+            self.send('Board already exist.')
             self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) exists')
             return
 
@@ -206,7 +213,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.execute('INSERT INTO BOARDS (BoardName, Moderator) VALUES (:board_name, :moderator)',
                           {"board_name": command[1], "moderator": self.current_user})
         self.conn.commit()
-        self.wfile.write(bytes('Create board successfully.\n', 'utf-8'))
+        self.send('Create board successfully.')
 
     def create_post_handler(self, command):
         """
@@ -218,19 +225,19 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if '--title' not in command or '--content' not in command:
-            self.wfile.write(bytes('Usage: create-post <board-name> --title <title> --content <content>\n', 'utf-8'))
+            self.send('Usage: create-post <board-name> --title <title> --content <content>')
             self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         title_idx = command.index('--title')
         content_idx = command.index('--content')
         if title_idx == 1 or content_idx == title_idx + 1 or len(command) == content_idx + 1:
-            self.wfile.write(bytes('Usage: create-post <board-name> --title <title> --content <content>\n', 'utf-8'))
+            self.send('Usage: create-post <board-name> --title <title> --content <content>')
             self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
@@ -238,13 +245,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
                                    {"board_name": command[1]})
         if cursor.fetchone() is None:
-            self.wfile.write(bytes('Board does not exist.\n', 'utf-8'))
+            self.send('Board does not exist.')
             self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Get title and content
-        title = ' '.join(command[title_idx+1:content_idx])
-        content = ' '.join(command[content_idx+1:])
+        title = ' '.join(command[title_idx + 1:content_idx])
+        content = ' '.join(command[content_idx + 1:])
         content = content.replace('<br>', '\n\t')
 
         # Create new post
@@ -252,7 +259,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             'INSERT INTO POSTS (BoardName, Title, Content, Author, PostDate) VALUES (:board_name, :title, :content, :author, date("now", "localtime"))',
             {"board_name": command[1], "title": title, "content": content, "author": self.current_user})
         self.conn.commit()
-        self.wfile.write(bytes('Create post successfully.\n', 'utf-8'))
+        self.send('Create post successfully.')
 
     def list_board_handler(self, command):
         """
@@ -264,7 +271,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) > 2:
-            self.wfile.write(bytes('Usage: list-board ##<key>\n', 'utf-8'))
+            self.send('Usage: list-board ##<key>')
             self.debug(f'Incomplete list-board command from {self.client_address[0]}({self.client_address[1]})')
             return
         elif len(command) == 2:
@@ -281,9 +288,9 @@ class ThreadedServerHandler(StreamRequestHandler):
             cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
 
         # Show boards
-        self.wfile.write(bytes('\tIndex\tName\tModerator\n', 'utf-8'))
+        self.send('\tIndex\tName\tModerator')
         for board in cursor:
-            self.wfile.write(bytes(f'\t{board["ID"]}\t{board["BoardName"]}\t{board["Moderator"]}\n', 'utf-8'))
+            self.send(f'\t{board["ID"]}\t{board["BoardName"]}\t{board["Moderator"]}')
 
     def list_post_handler(self, command):
         """
@@ -295,7 +302,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'List-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) > 3 or len(command) == 1:
-            self.wfile.write(bytes('Usage: list-post <board-name> ##<key>\n', 'utf-8'))
+            self.send('Usage: list-post <board-name> ##<key>')
             self.debug(f'Incomplete list-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         elif len(command) == 3:
@@ -308,7 +315,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
                                    {"board_name": command[1]})
         if cursor.fetchone() is None:
-            self.wfile.write(bytes('Board does not exist.\n', 'utf-8'))
+            self.send('Board does not exist.')
             self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
@@ -322,11 +329,11 @@ class ThreadedServerHandler(StreamRequestHandler):
                                        {"board_name": command[1]})
 
         # Show posts
-        self.wfile.write(bytes('\tID\tTitle\t\tAuthor\tDate\n', 'utf-8'))
+        self.send('\tID\tTitle\t\tAuthor\tDate')
         for post in cursor:
             split_date = post["PostDate"].split('-')
             date = split_date[1] + '/' + split_date[2]
-            self.wfile.write(bytes(f'\t{post["ID"]}\t{post["Title"]}\t\t{post["Author"]}\t{date}\n', 'utf-8'))
+            self.send(f'\t{post["ID"]}\t{post["Title"]}\t\t{post["Author"]}\t{date}')
 
     def read_handler(self, command):
         """
@@ -338,7 +345,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Read from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
-            self.wfile.write(bytes('Usage: read <post-id>\n', 'utf-8'))
+            self.send('Usage: read <post-id>')
             self.debug(f'Incomplete read command from {self.client_address[0]}({self.client_address[1]})')
             return
 
@@ -347,7 +354,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                                    {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
-            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.send('Post does not exist.')
             self.debug(f'Post ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
@@ -355,14 +362,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT Username, Comment FROM COMMENTS WHERE PostID=:id', {"id": command[1]})
 
         # Show the post and its comments
-        self.wfile.write(bytes(
+        self.send(
             f'\tAuthor\t:{post["Author"]}\n'
             f'\tTitle\t:{post["Title"]}\n'
             f'\tDate\t:{post["PostDate"]}\n'
-            f'\t--\n\t{post["Content"]}\n\t--\n',
-            'utf-8'))
+            f'\t--\n\t{post["Content"]}\n\t--')
         for comment in cursor:
-            self.wfile.write(bytes(f'\t{comment["Username"]}: {comment["Comment"]}\n', 'utf-8'))
+            self.send(f'\t{comment["Username"]}: {comment["Comment"]}')
 
     def delete_post_handler(self, command):
         """
@@ -374,13 +380,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Delete-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
-            self.wfile.write(bytes('Usage: delete-post <post-id>\n', 'utf-8'))
+            self.send('Usage: delete-post <post-id>')
             self.debug(f'Incomplete delete-post command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
@@ -388,13 +394,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT ID, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
-            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.send('Post does not exist.')
             self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Check whether user is the post owner
         if post["Author"] != self.current_user:
-            self.wfile.write(bytes('Not the post owner.\n', 'utf-8'))
+            self.send('Not the post owner.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
@@ -403,7 +409,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.commit()
         self.conn.execute('DELETE FROM POSTS WHERE ID=:id', {"id": command[1]})
         self.conn.commit()
-        self.wfile.write(bytes('Delete successfully.\n', 'utf-8'))
+        self.send('Delete successfully.')
 
     def update_post_handler(self, command):
         """
@@ -421,23 +427,23 @@ class ThreadedServerHandler(StreamRequestHandler):
             title_idx = None
             content_idx = command.index('--content')
         else:
-            self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+            self.send('Usage: update-post <post-id> --title/content <new>')
             self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         if title_idx:
             if title_idx == 1 or len(command) == title_idx + 1:
-                self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+                self.send('Usage: update-post <post-id> --title/content <new>')
                 self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
                 return
         elif content_idx:
             if content_idx == 1 or len(command) == content_idx + 1:
-                self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+                self.send('Usage: update-post <post-id> --title/content <new>')
                 self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
                 return
 
         # Check whether user is logged in
         if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
@@ -445,27 +451,27 @@ class ThreadedServerHandler(StreamRequestHandler):
         cursor = self.conn.execute('SELECT Author FROM POSTS WHERE ID=:id', {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
-            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.send('Post does not exist.')
             self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Check whether user is the post owner
         if post["Author"] != self.current_user:
-            self.wfile.write(bytes('Not the post owner.\n', 'utf-8'))
+            self.send('Not the post owner.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
         # Update the post
         if title_idx:
-            title = ' '.join(command[title_idx+1:])
-            self.conn.execute('UPDATE POSTS SET Title=:title WHERE ID=:id', {"title":title, "id":command[1]})
+            title = ' '.join(command[title_idx + 1:])
+            self.conn.execute('UPDATE POSTS SET Title=:title WHERE ID=:id', {"title": title, "id": command[1]})
             self.conn.commit()
         elif content_idx:
-            content = ' '.join(command[content_idx+1:])
+            content = ' '.join(command[content_idx + 1:])
             content = content.replace('<br>', '\n\t')
-            self.conn.execute('UPDATE POSTS SET Content=:content WHERE ID=:id', {"content":content, "id":command[1]})
+            self.conn.execute('UPDATE POSTS SET Content=:content WHERE ID=:id', {"content": content, "id": command[1]})
             self.conn.commit()
-        self.wfile.write(bytes('Update successfully.\n', 'utf-8'))
+        self.send('Update successfully.')
 
     def comment_handler(self, command):
         """
@@ -477,20 +483,20 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check arguments
         self.debug(f'Comment from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) < 3:
-            self.wfile.write(bytes('Usage: comment <post-id> <comment>\n', 'utf-8'))
+            self.send('Usage: comment <post-id> <comment>')
             self.debug(f'Incomplete comment command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
-            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.send('Please login first.')
             self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether post exists
         cursor = self.conn.execute('SELECT ID FROM POSTS WHERE ID=:id', {"id": command[1]})
         if cursor.fetchone() is None:
-            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.send('Post does not exist.')
             self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
@@ -499,7 +505,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.execute('INSERT INTO COMMENTS (PostID, Username, Comment) VALUES (:id, :username, :comment)',
                           {"id": command[1], "username": self.current_user, "comment": comment})
         self.conn.commit()
-        self.wfile.write(bytes('Comment successfully.\n', 'utf-8'))
+        self.send('Comment successfully.')
 
 
 def parse_arguments():

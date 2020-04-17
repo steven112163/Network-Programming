@@ -78,7 +78,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         elif command[0] == 'update-post':
             self.update_post_handler(command)
         elif command[0] == 'comment':
-            self.command_handler(command)
+            self.comment_handler(command)
         else:
             self.debug(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
@@ -107,7 +107,6 @@ class ThreadedServerHandler(StreamRequestHandler):
                           {"username": command[1], "email": command[2], "password": command[3]})
         self.conn.commit()
         self.wfile.write(bytes('Register successfully.\n', 'utf-8'))
-        self.debug(f'Register successfully from {self.client_address[0]}({self.client_address[1]})')
 
     def login_handler(self, command):
         """
@@ -143,7 +142,6 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         self.current_user = row['Username']
         self.wfile.write(bytes(f'Welcome, {self.current_user}.\n', 'utf-8'))
-        self.debug(f'Log in successfully from {self.client_address[0]}({self.client_address[1]})')
 
     def logout_handler(self, command):
         """
@@ -209,7 +207,6 @@ class ThreadedServerHandler(StreamRequestHandler):
                           {"board_name": command[1], "moderator": self.current_user})
         self.conn.commit()
         self.wfile.write(bytes('Create board successfully.\n', 'utf-8'))
-        self.debug(f'Board created successfully from {self.client_address[0]}({self.client_address[1]})')
 
     def create_post_handler(self, command):
         """
@@ -217,8 +214,45 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: create-post <board-name> --title <title> --content <content>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
-        # TODO
+        if '--title' not in command or '--content' not in command:
+            self.wfile.write(bytes('Usage: create-post <board-name> --title <title> --content <content>\n', 'utf-8'))
+            self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        title_idx = command.index('--title')
+        content_idx = command.index('--content')
+        if title_idx == 1 or content_idx == title_idx + 1 or len(command) == content_idx + 1:
+            self.wfile.write(bytes('Usage: create-post <board-name> --title <title> --content <content>\n', 'utf-8'))
+            self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether board exists
+        cursor = self.conn.execute('SELECT BoardName FROM BOARDS WHERE BoardName=:board_name',
+                                   {"board_name": command[1]})
+        if cursor.fetchone() is None:
+            self.wfile.write(bytes('Board does not exist.\n', 'utf-8'))
+            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get title and content
+        title = ' '.join(command[title_idx+1:content_idx])
+        content = ' '.join(command[content_idx+1:])
+        content = content.replace('<br>', '\n\t')
+
+        # Create new post
+        self.conn.execute(
+            'INSERT INTO POSTS (BoardName, Title, Content, Author, PostDate) VALUES (:board_name, :title, :content, :author, date("now", "localtime"))',
+            {"board_name": command[1], "title": title, "content": content, "author": self.current_user})
+        self.conn.commit()
+        self.wfile.write(bytes('Create post successfully.\n', 'utf-8'))
 
     def list_board_handler(self, command):
         """
@@ -288,11 +322,11 @@ class ThreadedServerHandler(StreamRequestHandler):
                                        {"board_name": command[1]})
 
         # Show posts
-        self.wfile.write(bytes('\tID\tTitle\tAuthor\tDate\n', 'utf-8'))
+        self.wfile.write(bytes('\tID\tTitle\t\tAuthor\tDate\n', 'utf-8'))
         for post in cursor:
             split_date = post["PostDate"].split('-')
             date = split_date[1] + '/' + split_date[2]
-            self.wfile.write(bytes(f'\t{post["ID"]}\t{post["Title"]}\t{post["Author"]}\t{date}\n', 'utf-8'))
+            self.wfile.write(bytes(f'\t{post["ID"]}\t{post["Title"]}\t\t{post["Author"]}\t{date}\n', 'utf-8'))
 
     def read_handler(self, command):
         """
@@ -322,13 +356,13 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Show the post and its comments
         self.wfile.write(bytes(
-            f'Author\t:{post["Author"]}\n'
-            f'Title\t:{post["Title"]}\n'
-            f'Date\t:{post["PostDate"]}\n'
-            f'--\n{post["Content"]}\n--\n',
+            f'\tAuthor\t:{post["Author"]}\n'
+            f'\tTitle\t:{post["Title"]}\n'
+            f'\tDate\t:{post["PostDate"]}\n'
+            f'\t--\n\t{post["Content"]}\n\t--\n',
             'utf-8'))
         for comment in cursor:
-            self.wfile.write(bytes(f'{comment["Username"]}: {comment["Comment"]}', 'utf-8'))
+            self.wfile.write(bytes(f'\t{comment["Username"]}: {comment["Comment"]}\n', 'utf-8'))
 
     def delete_post_handler(self, command):
         """
@@ -377,8 +411,61 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: update-post <post-id> --title/content <new>
         :return: None
         """
+
+        # Check arguments
         self.debug(f'Update-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
-        # TODO
+        if '--title' in command:
+            title_idx = command.index('--title')
+            content_idx = None
+        elif '--content' in command:
+            title_idx = None
+            content_idx = command.index('--content')
+        else:
+            self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+            self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        if title_idx:
+            if title_idx == 1 or len(command) == title_idx + 1:
+                self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+                self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+                return
+        elif content_idx:
+            if content_idx == 1 or len(command) == content_idx + 1:
+                self.wfile.write(bytes('Usage: update-post <post-id> --title/content <new>\n', 'utf-8'))
+                self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+                return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.wfile.write(bytes('Please login first.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether post exists
+        cursor = self.conn.execute('SELECT Author FROM POSTS WHERE ID=:id', {"id": command[1]})
+        post = cursor.fetchone()
+        if post is None:
+            self.wfile.write(bytes('Post does not exist.\n', 'utf-8'))
+            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Check whether user is the post owner
+        if post["Author"] != self.current_user:
+            self.wfile.write(bytes('Not the post owner.\n', 'utf-8'))
+            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
+            return
+
+        # Update the post
+        if title_idx:
+            title = ' '.join(command[title_idx+1:])
+            self.conn.execute('UPDATE POSTS SET Title=:title WHERE ID=:id', {"title":title, "id":command[1]})
+            self.conn.commit()
+        elif content_idx:
+            content = ' '.join(command[content_idx+1:])
+            content = content.replace('<br>', '\n\t')
+            self.conn.execute('UPDATE POSTS SET Content=:content WHERE ID=:id', {"content":content, "id":command[1]})
+            self.conn.commit()
+        self.wfile.write(bytes('Update successfully.\n', 'utf-8'))
 
     def comment_handler(self, command):
         """

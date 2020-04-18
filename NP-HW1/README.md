@@ -13,3 +13,8 @@ CREATE TABLE USERS(
     Password TEXT NOT NULL
 );
 ```
+
+## Run
+```shell script
+python3 ./server.py <port>
+```

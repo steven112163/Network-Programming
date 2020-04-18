@@ -49,3 +49,8 @@ CREATE TABLE COMMENTS(
     FOREIGN KEY(Username) REFERENCES USERS(Username)
 );
 ```
+
+## Run
+```shell script
+python3 ./server.py <port> [-v (0-2)]
+```

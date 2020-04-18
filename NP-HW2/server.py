@@ -288,9 +288,9 @@ class ThreadedServerHandler(StreamRequestHandler):
             cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
 
         # Show boards
-        self.send('\tIndex\tName\tModerator')
+        self.send('\tIndex\tName\t\tModerator')
         for board in cursor:
-            self.send(f'\t{board["ID"]}\t{board["BoardName"]}\t{board["Moderator"]}')
+            self.send(f'\t{board["ID"]}\t{board["BoardName"]}\t\t{board["Moderator"]}')
 
     def list_post_handler(self, command):
         """
@@ -329,7 +329,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                                        {"board_name": command[1]})
 
         # Show posts
-        self.send('\tID\tTitle\t\tAuthor\tDate')
+        self.send('\tID\tTitle\t\t\tAuthor\tDate')
         for post in cursor:
             split_date = post["PostDate"].split('-')
             date = split_date[1] + '/' + split_date[2]

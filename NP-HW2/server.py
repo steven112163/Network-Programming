@@ -2,6 +2,8 @@ import sys
 import argparse
 import sqlite3
 from socketserver import ThreadingTCPServer, StreamRequestHandler
+from termcolor import colored
+from datetime import datetime
 
 
 class ThreadedServerHandler(StreamRequestHandler):
@@ -17,7 +19,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         :return: None
         """
         print('New connection.')
-        self.debug(f'Connection from {self.client_address[0]}({self.client_address[1]})')
+        self.info(f'Connection from {self.client_address[0]}({self.client_address[1]})')
         self.conn = sqlite3.connect('server_0510002.db')
         self.conn.row_factory = sqlite3.Row
         self.send(
@@ -30,7 +32,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                 if command:
                     if command[0] == 'exit':
                         self.conn.close()
-                        self.debug(f'Exit from {self.client_address[0]}({self.client_address[1]})')
+                        self.info(f'Exit from {self.client_address[0]}({self.client_address[1]})')
                         return
                     self.command_handler(command)
                 self.wfile.write(bytes('% ', 'utf-8'))
@@ -45,15 +47,26 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
         self.wfile.write(bytes(f'{msg}\n', 'utf-8'))
 
-    def debug(self, log):
+    def info(self, log):
         """
-        Print log for debugging
-        :param log: log for debugging
+        Print info log
+        :param log: info log
         :return: None
         """
         global verbosity
-        if verbosity:
-            print(f'# {log}')
+        if verbosity > 1:
+            print('[', colored('INFO', 'blue'), f'] {log}')
+            sys.stdout.flush()
+
+    def warning(self, log):
+        """
+        Print warning log
+        :param log: warning log
+        :return: None
+        """
+        global verbosity
+        if verbosity > 0:
+            print('[', colored('WARN', 'yellow'), f'] {log}')
             sys.stdout.flush()
 
     def command_handler(self, command):
@@ -87,7 +100,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         elif command[0] == 'comment':
             self.comment_handler(command)
         else:
-            self.debug(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+            self.warning(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
     def register_handler(self, command):
         """
@@ -97,17 +110,17 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Register from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Register from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 4:
             self.send('Usage: register <username> <email> <password>')
-            self.debug(f'Incomplete register command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete register command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether username is used
         cursor = self.conn.execute('SELECT username from USERS WHERE Username=:username', {"username": command[1]})
         if cursor.fetchone() is not None:
             self.send('Username is already used.')
-            self.debug(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
+            self.warning(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
             return
 
         self.conn.execute('INSERT INTO USERS (Username, Email, Password) VALUES (:username, :email, :password)',
@@ -123,16 +136,16 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Login from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Login from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 3:
             self.send('Usage: login <username> <password>')
-            self.debug(f'Incomplete login command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete login command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check if user is already logged in
         if self.current_user:
             self.send('Please logout first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged in')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged in')
             return
 
         cursor = self.conn.execute('SELECT Username, Password FROM USERS WHERE Username=:username',
@@ -140,11 +153,11 @@ class ThreadedServerHandler(StreamRequestHandler):
         row = cursor.fetchone()
         if row is None:
             self.send('Login failed.')
-            self.debug(f"Username entered from {self.client_address[0]}({self.client_address[1]}) isn't in DB")
+            self.warning(f"Username entered from {self.client_address[0]}({self.client_address[1]}) isn't in DB")
             return
         if command[2] != row['Password']:
             self.send('Login failed.')
-            self.debug(f'Password entered from {self.client_address[0]}({self.client_address[1]}) is wrong')
+            self.warning(f'Password entered from {self.client_address[0]}({self.client_address[1]}) is wrong')
             return
 
         self.current_user = row['Username']
@@ -156,15 +169,15 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: logout
         :return: None
         """
-        self.debug(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
             self.send(f'Bye, {self.current_user}.')
             self.current_user = None
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
         else:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
     def whoami_handler(self, command):
         """
@@ -172,14 +185,14 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: whoami
         :return: None
         """
-        self.debug(f'Whoami from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Whoami from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
             self.send(f'{self.current_user}.')
-            self.debug(f'Current user check from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Current user check from {self.client_address[0]}({self.client_address[1]})')
         else:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
     def create_board_handler(self, command):
         """
@@ -189,16 +202,16 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Create-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
             self.send('Usage: create-board <name>')
-            self.debug(f'Incomplete create-board command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete create-board command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether board exists
@@ -206,7 +219,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                                    {"board_name": command[1]})
         if cursor.fetchone() is not None:
             self.send('Board already exist.')
-            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) exists')
+            self.warning(f'Board name from {self.client_address[0]}({self.client_address[1]}) exists')
             return
 
         # Create new board
@@ -223,22 +236,22 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Create-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if '--title' not in command or '--content' not in command:
             self.send('Usage: create-post <board-name> --title <title> --content <content>')
-            self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         title_idx = command.index('--title')
         content_idx = command.index('--content')
         if title_idx == 1 or content_idx == title_idx + 1 or len(command) == content_idx + 1:
             self.send('Usage: create-post <board-name> --title <title> --content <content>')
-            self.debug(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete create-post command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether board exists
@@ -246,7 +259,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                                    {"board_name": command[1]})
         if cursor.fetchone() is None:
             self.send('Board does not exist.')
-            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Get title and content
@@ -269,10 +282,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'List-board from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) > 2:
             self.send('Usage: list-board ##<key>')
-            self.debug(f'Incomplete list-board command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete list-board command from {self.client_address[0]}({self.client_address[1]})')
             return
         elif len(command) == 2:
             key_word = command[1][2:]
@@ -300,10 +313,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'List-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'List-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) > 3 or len(command) == 1:
             self.send('Usage: list-post <board-name> ##<key>')
-            self.debug(f'Incomplete list-post command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete list-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         elif len(command) == 3:
             key_word = command[2][2:]
@@ -316,7 +329,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                                    {"board_name": command[1]})
         if cursor.fetchone() is None:
             self.send('Board does not exist.')
-            self.debug(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Board name from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Get posts based on given board name and key word
@@ -343,10 +356,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Read from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Read from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
             self.send('Usage: read <post-id>')
-            self.debug(f'Incomplete read command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete read command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether post exists
@@ -355,7 +368,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
-            self.debug(f'Post ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Post ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Get comments in the post
@@ -378,16 +391,16 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Delete-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Delete-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) != 2:
             self.send('Usage: delete-post <post-id>')
-            self.debug(f'Incomplete delete-post command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete delete-post command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether post exists
@@ -395,13 +408,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
-            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Check whether user is the post owner
         if post["Author"] != self.current_user:
             self.send('Not the post owner.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
         # Delete post and its comments
@@ -419,7 +432,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Update-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Update-post from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if '--title' in command:
             title_idx = command.index('--title')
             content_idx = None
@@ -428,23 +441,23 @@ class ThreadedServerHandler(StreamRequestHandler):
             content_idx = command.index('--content')
         else:
             self.send('Usage: update-post <post-id> --title/content <new>')
-            self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
             return
         if title_idx:
             if title_idx == 1 or len(command) == title_idx + 1:
                 self.send('Usage: update-post <post-id> --title/content <new>')
-                self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+                self.warning(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
                 return
         elif content_idx:
             if content_idx == 1 or len(command) == content_idx + 1:
                 self.send('Usage: update-post <post-id> --title/content <new>')
-                self.debug(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
+                self.warning(f'Incomplete update-post command from {self.client_address[0]}({self.client_address[1]})')
                 return
 
         # Check whether user is logged in
         if not self.current_user:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether post exists
@@ -452,13 +465,13 @@ class ThreadedServerHandler(StreamRequestHandler):
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
-            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Check whether user is the post owner
         if post["Author"] != self.current_user:
             self.send('Not the post owner.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
         # Update the post
@@ -481,23 +494,23 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
 
         # Check arguments
-        self.debug(f'Comment from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        self.info(f'Comment from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
         if len(command) < 3:
             self.send('Usage: comment <post-id> <comment>')
-            self.debug(f'Incomplete comment command from {self.client_address[0]}({self.client_address[1]})')
+            self.warning(f'Incomplete comment command from {self.client_address[0]}({self.client_address[1]})')
             return
 
         # Check whether user is logged in
         if not self.current_user:
             self.send('Please login first.')
-            self.debug(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
             return
 
         # Check whether post exists
         cursor = self.conn.execute('SELECT ID FROM POSTS WHERE ID=:id', {"id": command[1]})
         if cursor.fetchone() is None:
             self.send('Post does not exist.')
-            self.debug(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
         # Create comment
@@ -515,7 +528,7 @@ def parse_arguments():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('port', help='port number', nargs='?', type=int)
-    parser.add_argument('-v', '--verbosity', help='verbosity level', action='store_true')
+    parser.add_argument('-v', '--verbosity', help='verbosity level (0-2)', default=0, type=int)
     return parser.parse_args()
 
 
@@ -582,6 +595,8 @@ if __name__ == '__main__':
     ThreadingTCPServer.daemon_threads = True
     with ThreadingTCPServer((host, port), ThreadedServerHandler) as server:
         try:
+            print(f'\n{datetime.now()}'
+                  , f'\nStarting server at {host}:{port}\nQuit the server with CONTROL-C.\n')
             server.serve_forever()
         except KeyboardInterrupt:
             print('\n')

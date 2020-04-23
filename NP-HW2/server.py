@@ -2,7 +2,6 @@ import sys
 import argparse
 import sqlite3
 from socketserver import ThreadingTCPServer, StreamRequestHandler
-from termcolor import colored
 from datetime import datetime
 
 
@@ -55,7 +54,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
         global verbosity
         if verbosity > 1:
-            print('[', colored('INFO', 'blue'), f'] {log}')
+            print(f'[\033[96mINFO\033[00m] {log}')
             sys.stdout.flush()
 
     def warning(self, log):
@@ -66,7 +65,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         """
         global verbosity
         if verbosity > 0:
-            print('[', colored('WARN', 'yellow'), f'] {log}')
+            print(f'[\033[93mWARN\033[00m] {log}')
             sys.stdout.flush()
 
     def command_handler(self, command):

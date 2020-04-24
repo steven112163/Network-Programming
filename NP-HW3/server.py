@@ -23,7 +23,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.row_factory = sqlite3.Row
         self.send(
             '********************************\n** Welcome to the BBS server. **\n********************************')
-        self.wfile.write(bytes('% ', 'utf-8'))
+        #self.wfile.write(bytes('% ', 'utf-8'))
         self.current_user = None
         while True:
             try:
@@ -35,7 +35,8 @@ class ThreadedServerHandler(StreamRequestHandler):
                         self.info(f'Exit from {self.client_address[0]}({self.client_address[1]})')
                         return
                     self.command_handler(command)
-                self.wfile.write(bytes('% ', 'utf-8'))
+                else:
+                    self.wfile.write(bytes('% ', 'utf-8'))
             except Exception as e:
                 print(str(e))
 
@@ -45,7 +46,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param msg: message
         :return: None
         """
-        self.wfile.write(bytes(f'{msg}\n', 'utf-8'))
+        self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
 
     def info(self, log):
         """

@@ -28,6 +28,73 @@ def get_message(sock):
     return ''.join(message)
 
 
+def response_handler(res):
+    """
+    Function handling responses
+    :param res: response from server
+    :return: Message needs to be showed. And True if response is 'exit', False otherwise.
+    """
+    res = res.split('|')
+    if res[0] == 'exit':
+        return '', True
+
+    return res[0], False
+
+
+def register_handler(res):
+    """
+    Function handling register response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def create_post_handler(res):
+    """
+    Function handling create-post response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def read_handler(res):
+    """
+    Function handling read response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def delete_handler(res):
+    """
+    Function handling delete response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def update_post_handler(res):
+    """
+    Function handling update-post response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def comment_handler(res):
+    """
+    Function handling comment response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
 if __name__ == '__main__':
     """
     Client
@@ -48,8 +115,9 @@ if __name__ == '__main__':
             while True:
                 command = input()
                 so.sendall(bytes(command + '\n', 'utf-8'))
-                response = get_message(so)
-                if response == 'exit':
+                raw_response = get_message(so)
+                response, exitOrNot = response_handler(raw_response)
+                if exitOrNot:
                     so.close()
                     break
                 print(f'{response}', end='', flush=True)

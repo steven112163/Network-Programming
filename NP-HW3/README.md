@@ -9,6 +9,7 @@ HW3 of Network Programming
 CREATE TABLE USERS(
     UID INTEGER PRIMARY KEY AUTOINCREMENT,
     Username TEXT NOT NULL UNIQUE,
+    BucketName TEXT NOT NULL UNIQUE,
     Email TEXT NOT NULL,
     Password TEXT NOT NULL
 );
@@ -25,12 +26,13 @@ CREATE TABLE BOARDS(
 ```
 
 ### Posts
+Contents are stored on S3 for each author
 ```sqlite
 CREATE TABLE POSTS(
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     BoardName TEXT NOT NULL,
+    ObjectName TEXT NOT NULL,
     Title TEXT NOT NULL,
-    Content TEXT NOT NULL,
     Author TEXT NOT NULL,
     PostDate TEXT NOT NULL,
     FOREIGN KEY(BoardName) REFERENCES BOARDS(BoardName),
@@ -39,16 +41,7 @@ CREATE TABLE POSTS(
 ```
 
 ### Comments
-```sqlite
-CREATE TABLE COMMENTS(
-    ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    PostID INTEGER NOT NULL,
-    Username TEXT NOT NULL,
-    Comment TEXT NOT NULL,
-    FOREIGN KEY(PostID) REFERENCES POSTS(ID),
-    FOREIGN KEY(Username) REFERENCES USERS(Username)
-);
-```
+Comments for a post are stored in the post object in S3
 
 ## Run
 ```shell script

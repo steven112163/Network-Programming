@@ -23,7 +23,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.row_factory = sqlite3.Row
         self.send(
             '********************************\n** Welcome to the BBS server. **\n********************************')
-        #self.wfile.write(bytes('% ', 'utf-8'))
+        # self.wfile.write(bytes('% ', 'utf-8'))
         self.current_user = None
         while True:
             try:
@@ -40,13 +40,17 @@ class ThreadedServerHandler(StreamRequestHandler):
             except Exception as e:
                 print(str(e))
 
-    def send(self, msg):
+    def send(self, msg, res=None):
         """
         Send message to user
         :param msg: message
+        :param res: optional response to client
         :return: None
         """
-        self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+        if res is None:
+            self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+        else:
+            self.wfile.write(bytes(f'{msg}\n% |{res}', 'utf-8'))
 
     def info(self, log):
         """
@@ -106,6 +110,7 @@ class ThreadedServerHandler(StreamRequestHandler):
     def register_handler(self, command):
         """
         Function handling register command
+        Need to tell client bucket name
         :param command: register <username> <email> <password
         :return: None
         """
@@ -124,10 +129,12 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.warning(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
             return
 
-        self.conn.execute('INSERT INTO USERS (Username, Email, Password) VALUES (:username, :email, :password)',
-                          {"username": command[1], "email": command[2], "password": command[3]})
+        bucket_name = '0510002-' + command[1].lower().replace('_', '') + '-account'
+        self.conn.execute(
+            'INSERT INTO USERS (Username, BucketName, Email, Password) VALUES (:username, :bucket_name, :email, :password)',
+            {"username": command[1], "bucket_name": bucket_name, "email": command[2], "password": command[3]})
         self.conn.commit()
-        self.send('Register successfully.')
+        self.send('Register successfully.', bucket_name)
 
     def login_handler(self, command):
         """
@@ -232,6 +239,7 @@ class ThreadedServerHandler(StreamRequestHandler):
     def create_post_handler(self, command):
         """
         Function handling create-post command
+        Need to tell client bucket name, object name and content
         :param command: create-post <board-name> --title <title> --content <content>
         :return: None
         """
@@ -266,14 +274,20 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Get title and content
         title = ' '.join(command[title_idx + 1:content_idx])
         content = ' '.join(command[content_idx + 1:])
-        content = content.replace('<br>', '\n\t')
+        content = '\t--\n\t' + content.replace('<br>', '\n\t') + '\n\t--'
+
+        # Get bucket name and object name
+        object_name = str(datetime.now()).replace(' ', 'T').replace(':', '-')
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
 
         # Create new post
         self.conn.execute(
-            'INSERT INTO POSTS (BoardName, Title, Content, Author, PostDate) VALUES (:board_name, :title, :content, :author, date("now", "localtime"))',
-            {"board_name": command[1], "title": title, "content": content, "author": self.current_user})
+            'INSERT INTO POSTS (BoardName, ObjectName, Title, Author, PostDate) VALUES (:board_name, :object_name, :title, :author, date("now", "localtime"))',
+            {"board_name": command[1], "object_name": object_name, "title": title, "author": self.current_user})
         self.conn.commit()
-        self.send('Create post successfully.')
+        self.send('Create post successfully.', f'{bucket_name}|{object_name}|{content}')
 
     def list_board_handler(self, command):
         """
@@ -352,6 +366,7 @@ class ThreadedServerHandler(StreamRequestHandler):
     def read_handler(self, command):
         """
         Function handling read command
+        Need to tell client bucket name and object name
         :param command: read <post-id>
         :return: None
         """
@@ -364,7 +379,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether post exists
-        cursor = self.conn.execute('SELECT Author, Title, PostDate, Content FROM POSTS WHERE ID=:id',
+        cursor = self.conn.execute('SELECT ObjectName, Author, Title, PostDate FROM POSTS WHERE ID=:id',
                                    {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
@@ -372,21 +387,21 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.warning(f'Post ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
-        # Get comments in the post
-        cursor = self.conn.execute('SELECT Username, Comment FROM COMMENTS WHERE PostID=:id', {"id": command[1]})
+        # Get the name of bucket which contains the post
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
 
         # Show the post and its comments
         self.send(
             f'\tAuthor\t:{post["Author"]}\n'
             f'\tTitle\t:{post["Title"]}\n'
-            f'\tDate\t:{post["PostDate"]}\n'
-            f'\t--\n\t{post["Content"]}\n\t--')
-        for comment in cursor:
-            self.send(f'\t{comment["Username"]}: {comment["Comment"]}')
+            f'\tDate\t:{post["PostDate"]}\n', f'{bucket_name}|{post["ObjectName"]}')
 
     def delete_post_handler(self, command):
         """
         Function handling delete-post command
+        Need to tell client bucket name and object name
         :param command: delete-post <post-id>
         :return: None
         """
@@ -405,7 +420,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether post exists
-        cursor = self.conn.execute('SELECT ID, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
+        cursor = self.conn.execute('SELECT ID, ObjectName, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
@@ -418,16 +433,20 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
+        # Get the name of bucket which contains the post
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
+
         # Delete post and its comments
-        self.conn.execute('DELETE FROM COMMENTS WHERE PostID=:id', {"id": command[1]})
-        self.conn.commit()
         self.conn.execute('DELETE FROM POSTS WHERE ID=:id', {"id": command[1]})
         self.conn.commit()
-        self.send('Delete successfully.')
+        self.send('Delete successfully.', f'{bucket_name}|{post["ObjectName"]}')
 
     def update_post_handler(self, command):
         """
         Function handling update-post command
+        Need to tell client bucket name, object name and content when updating post content
         :param command: update-post <post-id> --title/content <new>
         :return: None
         """
@@ -462,7 +481,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether post exists
-        cursor = self.conn.execute('SELECT Author FROM POSTS WHERE ID=:id', {"id": command[1]})
+        cursor = self.conn.execute('SELECT ObjectName, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
@@ -475,21 +494,26 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is not the post owner')
             return
 
+        # Get the name of bucket which contains the post
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
+
         # Update the post
         if title_idx:
             title = ' '.join(command[title_idx + 1:])
             self.conn.execute('UPDATE POSTS SET Title=:title WHERE ID=:id', {"title": title, "id": command[1]})
             self.conn.commit()
+            self.send('Update successfully.')
         elif content_idx:
             content = ' '.join(command[content_idx + 1:])
-            content = content.replace('<br>', '\n\t')
-            self.conn.execute('UPDATE POSTS SET Content=:content WHERE ID=:id', {"content": content, "id": command[1]})
-            self.conn.commit()
-        self.send('Update successfully.')
+            content = '\t--\n\t' + content.replace('<br>', '\n\t') + '\n\t--'
+            self.send('Update successfully.', f'{bucket_name}|{post["ObjectName"]}|{content}')
 
     def comment_handler(self, command):
         """
         Function handling comment command
+        Need to tell client bucket name, object name and comment
         :param command: comment <post-id> <comment>
         :return: None
         """
@@ -508,18 +532,21 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether post exists
-        cursor = self.conn.execute('SELECT ID FROM POSTS WHERE ID=:id', {"id": command[1]})
-        if cursor.fetchone() is None:
+        cursor = self.conn.execute('SELECT ID, ObjectName FROM POSTS WHERE ID=:id', {"id": command[1]})
+        post = cursor.fetchone()
+        if post is None:
             self.send('Post does not exist.')
             self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
+        # Get the name of bucket which contains the post
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
+
         # Create comment
-        comment = ' '.join(command[2:])
-        self.conn.execute('INSERT INTO COMMENTS (PostID, Username, Comment) VALUES (:id, :username, :comment)',
-                          {"id": command[1], "username": self.current_user, "comment": comment})
-        self.conn.commit()
-        self.send('Comment successfully.')
+        comment = self.current_user + ': ' + ' '.join(command[2:])
+        self.send('Comment successfully.', f'{bucket_name}|{post["ObjectName"]}|{comment}')
 
 
 def parse_arguments():
@@ -554,7 +581,8 @@ if __name__ == '__main__':
     if cursor.fetchone() is None:
         conn.execute('''CREATE TABLE USERS (
                             UID      INTEGER PRIMARY KEY AUTOINCREMENT,
-                            Username TEXT UNIQUE NOT NULL,
+                            Username TEXT NOT NULL UNIQUE,
+                            BucketName TEXT NOT NULL UNIQUE,
                             Email    TEXT NOT NULL,
                             Password TEXT NOT NULL
                         );''')
@@ -573,23 +601,12 @@ if __name__ == '__main__':
         conn.execute('''CREATE TABLE POSTS(
                             ID INTEGER PRIMARY KEY AUTOINCREMENT,
                             BoardName TEXT NOT NULL,
+                            ObjectName TEXT NOT NULL,
                             Title TEXT NOT NULL,
-                            Content TEXT NOT NULL,
                             Author TEXT NOT NULL,
                             PostDate TEXT NOT NULL,
                             FOREIGN KEY(BoardName) REFERENCES BOARDS(BoardName),
                             FOREIGN KEY(Author) REFERENCES USERS(Username)
-                        );''')
-
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="COMMENTS";')
-    if cursor.fetchone() is None:
-        conn.execute('''CREATE TABLE COMMENTS(
-                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                            PostID INTEGER NOT NULL,
-                            Username TEXT NOT NULL,
-                            Comment TEXT NOT NULL,
-                            FOREIGN KEY(PostID) REFERENCES POSTS(ID),
-                            FOREIGN KEY(Username) REFERENCES USERS(Username)
                         );''')
     conn.close()
 

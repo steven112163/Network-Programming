@@ -52,8 +52,8 @@ CREATE TABLE COMMENTS(
 
 ## Run
 ```shell script
-python3 ./server.py <port> [-v (0-2)]
+python3 ./server.py <host> <port> [-v (0-2)]
 ```
 ```shell script
-python3 ./client.py <port>
+python3 ./client.py <host> <port>
 ```

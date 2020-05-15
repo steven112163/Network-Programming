@@ -1,5 +1,6 @@
 import socket
 import argparse
+import boto3
 
 
 def parse_arguments():
@@ -37,6 +38,18 @@ def response_handler(res):
     res = res.split('|')
     if res[0] == 'exit':
         return '', True
+    elif res[0] == 'Register successfully.':
+        register_handler(res)
+    elif res[0] == 'Create post successfully.':
+        create_post_handler(res)
+    elif res[0] == 'Delete successfully.':
+        delete_handler(res)
+    elif res[0] == 'Update successfully.' and len(res) > 1:
+        update_post_handler(res)
+    elif res[0] == 'Comment successfully.':
+        comment_handler(res)
+    elif res[0] == "It's read command":
+        return read_handler(res), False
 
     return res[0], False
 
@@ -47,7 +60,8 @@ def register_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    s3.create_bucket(Bucket=res[1])
 
 
 def create_post_handler(res):
@@ -56,7 +70,12 @@ def create_post_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    s3.put_object(
+        Bucket=res[1],
+        Key=res[2],
+        Body=res[3]
+    )
 
 
 def read_handler(res):
@@ -65,7 +84,12 @@ def read_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
+    return f'\tAuthor\t:{res[3]}\n'\
+           f'\tTitle\t:{res[4]}\n'\
+           f'\tDate\t:{res[5]}\n'\
+           f'{content}'
 
 
 def delete_handler(res):
@@ -74,7 +98,8 @@ def delete_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    s3.Object(res[1], res[2]).delete()
 
 
 def update_post_handler(res):
@@ -83,7 +108,13 @@ def update_post_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    # TODO: Need to check
+    s3.put_object(
+        Bucket=res[1],
+        Key=res[2],
+        Body=res[3]
+    )
 
 
 def comment_handler(res):
@@ -92,7 +123,15 @@ def comment_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global s3
+    content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
+    content = content + f'\n\t{res[3]}'
+    # TODO: Need to check
+    s3.put_object(
+        Bucket=res[1],
+        Key=res[2],
+        Body=content
+    )
 
 
 if __name__ == '__main__':
@@ -106,6 +145,9 @@ if __name__ == '__main__':
     args = parse_arguments()
     host = args.host
     port = args.port
+
+    # Connect to S3
+    s3 = boto3.resource('s3')
 
     # Start client process
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as so:

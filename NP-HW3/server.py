@@ -277,7 +277,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         content = '\t--\n\t' + content.replace('<br>', '\n\t') + '\n\t--'
 
         # Get bucket name and object name
-        object_name = str(datetime.now()).replace(' ', 'T').replace(':', '-')
+        object_name = str(datetime.now()).replace(' ', 'T').replace(':', '-') + '.txt'
         cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
                                    {"username": self.current_user})
         bucket_name = cursor.fetchone()["BucketName"]
@@ -393,10 +393,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         bucket_name = cursor.fetchone()["BucketName"]
 
         # Show the post and its comments
-        self.send(
-            f'\tAuthor\t:{post["Author"]}\n'
-            f'\tTitle\t:{post["Title"]}\n'
-            f'\tDate\t:{post["PostDate"]}\n', f'{bucket_name}|{post["ObjectName"]}')
+        self.send("It's read command",
+                  f'{bucket_name}|{post["ObjectName"]}|{post["Author"]}|{post["Title"]}|{post["PostDate"]}')
 
     def delete_post_handler(self, command):
         """

@@ -11,7 +11,8 @@ CREATE TABLE USERS(
     Username TEXT NOT NULL UNIQUE,
     BucketName TEXT NOT NULL UNIQUE,
     Email TEXT NOT NULL,
-    Password TEXT NOT NULL
+    Password TEXT NOT NULL,
+    NumOfMails INTEGER NOT NULL
 );
 ```
 
@@ -41,7 +42,22 @@ CREATE TABLE POSTS(
 ```
 
 ### Comments
-Comments for a post are stored in the post object in S3
+Comments for a post are stored in the post object on S3
+
+### Mails
+```sqlite
+CREATE TABLE MAILS(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    ObjectName TEXT NOT NULL,
+    Recipient TEXT NOT NULL,
+    MailID INTEGER NOT NULL,
+    Subject TEXT NOT NULL,
+    Sender TEXT NOT NULL,
+    MailDate TEXT NOT NULL,
+    FOREIGN KEY(Recipient) REFERENCES USERS(Username),
+    FOREIGN KEY(Sender) REFERENCES USERS(Username)
+);
+```
 
 ## Run
 ```shell script

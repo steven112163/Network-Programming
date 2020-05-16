@@ -50,6 +50,12 @@ def response_handler(raw_res):
         comment_handler(res)
     elif res[0] == "It's read command\n% ":
         return read_handler(res), False
+    elif res[0] == 'Sent successfully.\n% ':
+        mail_to_handler(res)
+    elif res[0] == "It's retr-mail command\n% ":
+        return retr_mail_handler(res), False
+    elif res[0] == 'Mail deleted.\n% ':
+        delete_mail_handler(res)
 
     return res[0], False
 
@@ -82,14 +88,14 @@ def read_handler(res):
     """
     Function handling read response
     :param res: response from server
-    :return: None
+    :return: String of the post and its comments
     """
     s3 = boto3.resource('s3')
     content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
-    return f'\tAuthor\t:{res[3]}\n'\
-           f'\tTitle\t:{res[4]}\n'\
-           f'\tDate\t:{res[5]}\n'\
-           f'{content}'
+    return f'\tAuthor\t:{res[3]}\n' \
+           f'\tTitle\t:{res[4]}\n' \
+           f'\tDate\t:{res[5]}\n' \
+           f'{content}\n% '
 
 
 def delete_handler(res):
@@ -131,6 +137,33 @@ def comment_handler(res):
         Key=res[2],
         Body=content
     )
+
+
+def mail_to_handler(res):
+    """
+    Function handling mail-to response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def retr_mail_handler(res):
+    """
+    Function handling retr-mail response
+    :param res: response from server
+    :return: String of the mail
+    """
+    pass
+
+
+def delete_mail_handler(res):
+    """
+    Function handling delete-mail response
+    :param res: response from server
+    :return: None
+    """
+    pass
 
 
 if __name__ == '__main__':

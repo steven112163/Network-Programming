@@ -104,6 +104,14 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.update_post_handler(command)
         elif command[0] == 'comment':
             self.comment_handler(command)
+        elif command[0] == 'mail-to':
+            self.mail_to_handler(command)
+        elif command[0] == 'list-mail':
+            self.list_mail_handler(command)
+        elif command[0] == 'retr-mail':
+            self.retr_mail_handler(command)
+        elif command[0] == 'delete-mail':
+            self.delete_mail_handler(command)
         else:
             self.warning(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
@@ -131,8 +139,9 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         bucket_name = '0510002-' + command[1].lower().replace('_', '') + '-account'
         self.conn.execute(
-            'INSERT INTO USERS (Username, BucketName, Email, Password) VALUES (:username, :bucket_name, :email, :password)',
-            {"username": command[1], "bucket_name": bucket_name, "email": command[2], "password": command[3]})
+            'INSERT INTO USERS (Username, BucketName, Email, Password, NumOfMails) VALUES (:username, :bucket_name, :email, :password, :mails)',
+            {"username": command[1], "bucket_name": bucket_name, "email": command[2], "password": command[3],
+             "mails": 0})
         self.conn.commit()
         self.send('Register successfully.', bucket_name)
 
@@ -316,9 +325,10 @@ class ThreadedServerHandler(StreamRequestHandler):
             cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
 
         # Show boards
-        self.send('\tIndex\tName\t\tModerator')
+        message = '\tIndex\tName\t\tModerator'
         for board in cursor:
-            self.send(f'\t{board["ID"]}\t{board["BoardName"]}\t\t{board["Moderator"]}')
+            message = message + f'\n\t{board["ID"]}\t{board["BoardName"]}\t\t{board["Moderator"]}'
+        self.send(message)
 
     def list_post_handler(self, command):
         """
@@ -357,11 +367,12 @@ class ThreadedServerHandler(StreamRequestHandler):
                                        {"board_name": command[1]})
 
         # Show posts
-        self.send('\tID\tTitle\t\t\tAuthor\tDate')
+        message = '\tID\tTitle\t\t\tAuthor\tDate'
         for post in cursor:
             split_date = post["PostDate"].split('-')
             date = split_date[1] + '/' + split_date[2]
-            self.send(f'\t{post["ID"]}\t{post["Title"]}\t\t{post["Author"]}\t{date}')
+            message = message + f'\n\t{post["ID"]}\t{post["Title"]}\t\t{post["Author"]}\t{date}'
+        self.send(message)
 
     def read_handler(self, command):
         """
@@ -549,29 +560,126 @@ class ThreadedServerHandler(StreamRequestHandler):
     def mail_to_handler(self, command):
         """
         Function handling mail-to command
-        Need to tell client bucket name, object name and mail
+        Need to tell client bucket name, object name and content
         :param command: mail-to <username> --subject <subject> --content <content>
         :return: None
         """
-        pass
+
+        # Check arguments
+        self.info(f'Mail-to from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if '--subject' not in command or '--content' not in command:
+            self.send('Usage: mail-to <username> --subject <subject> --content <content>')
+            self.warning(f'Incomplete mail-to command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        subject_idx = command.index('--subject')
+        content_idx = command.index('--content')
+        if subject_idx == 1 or content_idx == subject_idx + 1 or len(command) == content_idx + 1:
+            self.send('Usage: mail-to <username> --subject <subject> --content <content>')
+            self.warning(f'Incomplete mail-to command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether user exists
+        cursor = self.conn.execute('SELECT BucketName, NumOfMails FROM USERS WHERE Username=:username',
+                                   {"username": command[1]})
+        recipient = cursor.fetchone()
+        if recipient is None:
+            self.send(f'{command[1]} does not exist.')
+            self.warning(f'Username from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get subject and content
+        subject = ' '.join(command[subject_idx + 1:content_idx])
+        content = ' '.join(command[content_idx + 1:])
+        content = '\t--\n\t' + content.replace('<br>', '\n\t')
+
+        # Get object name
+        object_name = 'mail-' + str(datetime.now()).replace(' ', 'T').replace(':', '-') + '.txt'
+
+        # Get new total number of received mails in recipient's mailbox
+        num_mails = recipient["NumOfMails"] + 1
+
+        # Update the number of mails in USERS table
+        self.conn.execute('UPDATE USERS SET NumOfMails=:mails WHERE Username=:username',
+                          {"mails": num_mails, "username": command[1]})
+
+        # Create new mail
+        self.conn.execute(
+            'INSERT INTO MAILS (ObjectName, Recipient, MailID, Subject, Sender, MailDate) VALUES (:object_name, :recipient, :mailID, :subject, :sender, date("now", "localtime"))',
+            {"object_name": object_name, "recipient": command[1], "mailID": num_mails, "subject": subject,
+             "sender": self.current_user})
+        self.conn.commit()
+        self.send('Sent successfully.', f'{recipient["BucketName"]}|{object_name}|{content}')
 
     def list_mail_handler(self, command):
         """
         Function handling list-mail command
-        Need to tell client bucket name and object names
         :param command: list-mail
         :return: None
         """
-        pass
+        self.info(f'List-mail from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Get all user's mails from his/her mailbox
+        cursor = self.conn.execute('SELECT mailID, Subject, Sender, MailDate FROM MAILS WHERE Recipient=:recipient',
+                                   {"recipient": self.current_user})
+
+        # Show mails
+        message = '\tID\tSubject\tFrom\tDate'
+        for mail in cursor:
+            split_date = mail["MailDate"].split('-')
+            date = split_date[1] + '/' + split_date[2]
+            message = message + f'\n\t{mail["mailID"]}\t{mail["Subject"]}\t\t{mail["Sender"]}\t{date}'
+        self.send(message)
 
     def retr_mail_handler(self, command):
         """
         Function handling retr-mail command
-        Need to tell client bucket name and object name
+        Need to tell client bucket name, object name, subject, sender and mail date
         :param command: retr-mail <mail#>
         :return: None
         """
-        pass
+        # Check arguments
+        self.info(f'Retr-mail from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 2:
+            self.send('Usage: retr-mail <mail#>')
+            self.warning(f'Incomplete retr-mail command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether mail exists
+        cursor = self.conn.execute(
+            'SELECT ObjectName, Subject, Sender, MailDate FROM MAILS WHERE mailID=:id AND Recipient=:username',
+            {"id": command[1], "username": self.current_user})
+        mail = cursor.fetchone()
+        if mail is None:
+            self.send('No such mail.')
+            self.warning(f'Mail ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get the name of bucket which contains the mail
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
+
+        # Show the mail
+        self.send("It's retr-mail command",
+                  f'{bucket_name}|{mail["ObjectName"]}|{mail["Subject"]}|{mail["Sender"]}|{mail["MailDate"]}')
 
     def delete_mail_handler(self, command):
         """
@@ -580,7 +688,40 @@ class ThreadedServerHandler(StreamRequestHandler):
         :param command: delete-mail <mail#>
         :return: None
         """
-        pass
+
+        # Check arguments
+        self.info(f'Delete-mail from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 2:
+            self.send('Usage: delete-mail <mail#>')
+            self.warning(f'Incomplete delete-mail command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Check whether mail exists
+        cursor = self.conn.execute(
+            'SELECT ObjectName FROM MAILS WHERE mailID=:id AND Recipient=:username',
+            {"id": command[1], "username": self.current_user})
+        mail = cursor.fetchone()
+        if mail is None:
+            self.send('No such mail.')
+            self.warning(f'Mail ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Get the name of bucket which contains the mail
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
+                                   {"username": self.current_user})
+        bucket_name = cursor.fetchone()["BucketName"]
+
+        # Delete mail
+        self.conn.execute('DELETE FROM MAILS WHERE mailID=:id AND Recipient=:username',
+                          {"id": command[1], "username": self.current_user})
+        self.conn.commit()
+        self.send('Mail deleted.', f'{bucket_name}|{mail["ObjectName"]}')
 
 
 def parse_arguments():

@@ -123,7 +123,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether username is used
-        cursor = self.conn.execute('SELECT username from USERS WHERE Username=:username', {"username": command[1]})
+        cursor = self.conn.execute('SELECT Username from USERS WHERE Username=:username', {"username": command[1]})
         if cursor.fetchone() is not None:
             self.send('Username is already used.')
             self.warning(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
@@ -389,7 +389,7 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Get the name of bucket which contains the post
         cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
-                                   {"username": self.current_user})
+                                   {"username": post['Author']})
         bucket_name = cursor.fetchone()["BucketName"]
 
         # Show the post and its comments
@@ -530,7 +530,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether post exists
-        cursor = self.conn.execute('SELECT ID, ObjectName FROM POSTS WHERE ID=:id', {"id": command[1]})
+        cursor = self.conn.execute('SELECT ID, ObjectName, Author FROM POSTS WHERE ID=:id', {"id": command[1]})
         post = cursor.fetchone()
         if post is None:
             self.send('Post does not exist.')
@@ -539,12 +539,48 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Get the name of bucket which contains the post
         cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username',
-                                   {"username": self.current_user})
+                                   {"username": post['Author']})
         bucket_name = cursor.fetchone()["BucketName"]
 
         # Create comment
         comment = self.current_user + ': ' + ' '.join(command[2:])
         self.send('Comment successfully.', f'{bucket_name}|{post["ObjectName"]}|{comment}')
+
+    def mail_to_handler(self, command):
+        """
+        Function handling mail-to command
+        Need to tell client bucket name, object name and mail
+        :param command: mail-to <username> --subject <subject> --content <content>
+        :return: None
+        """
+        pass
+
+    def list_mail_handler(self, command):
+        """
+        Function handling list-mail command
+        Need to tell client bucket name and object names
+        :param command: list-mail
+        :return: None
+        """
+        pass
+
+    def retr_mail_handler(self, command):
+        """
+        Function handling retr-mail command
+        Need to tell client bucket name and object name
+        :param command: retr-mail <mail#>
+        :return: None
+        """
+        pass
+
+    def delete_mail_handler(self, command):
+        """
+        Function handling delete-mail command
+        Need to tell client bucket name and object name
+        :param command: delete-mail <mail#>
+        :return: None
+        """
+        pass
 
 
 def parse_arguments():

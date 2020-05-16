@@ -29,26 +29,26 @@ def get_message(sock):
     return ''.join(message)
 
 
-def response_handler(res):
+def response_handler(raw_res):
     """
     Function handling responses
-    :param res: response from server
+    :param raw_res: response from server
     :return: Message needs to be showed. And True if response is 'exit', False otherwise.
     """
-    res = res.split('|')
+    res = raw_res.split('|')
     if res[0] == 'exit':
         return '', True
-    elif res[0] == 'Register successfully.':
+    elif res[0] == 'Register successfully.\n% ':
         register_handler(res)
-    elif res[0] == 'Create post successfully.':
+    elif res[0] == 'Create post successfully.\n% ':
         create_post_handler(res)
-    elif res[0] == 'Delete successfully.':
+    elif res[0] == 'Delete successfully.\n% ':
         delete_handler(res)
-    elif res[0] == 'Update successfully.' and len(res) > 1:
+    elif res[0] == 'Update successfully.\n% ' and len(res) > 1:
         update_post_handler(res)
-    elif res[0] == 'Comment successfully.':
+    elif res[0] == 'Comment successfully.\n% ':
         comment_handler(res)
-    elif res[0] == "It's read command":
+    elif res[0] == "It's read command\n% ":
         return read_handler(res), False
 
     return res[0], False
@@ -60,7 +60,7 @@ def register_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
+    s3 = boto3.resource('s3')
     s3.create_bucket(Bucket=res[1])
 
 
@@ -70,7 +70,7 @@ def create_post_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
+    s3 = boto3.client('s3')
     s3.put_object(
         Bucket=res[1],
         Key=res[2],
@@ -84,7 +84,7 @@ def read_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
+    s3 = boto3.resource('s3')
     content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
     return f'\tAuthor\t:{res[3]}\n'\
            f'\tTitle\t:{res[4]}\n'\
@@ -98,7 +98,7 @@ def delete_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
+    s3 = boto3.resource('s3')
     s3.Object(res[1], res[2]).delete()
 
 
@@ -108,8 +108,7 @@ def update_post_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
-    # TODO: Need to check
+    s3 = boto3.client('s3')
     s3.put_object(
         Bucket=res[1],
         Key=res[2],
@@ -123,10 +122,10 @@ def comment_handler(res):
     :param res: response from server
     :return: None
     """
-    global s3
+    s3 = boto3.resource('s3')
     content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
     content = content + f'\n\t{res[3]}'
-    # TODO: Need to check
+    s3 = boto3.client('s3')
     s3.put_object(
         Bucket=res[1],
         Key=res[2],
@@ -146,17 +145,14 @@ if __name__ == '__main__':
     host = args.host
     port = args.port
 
-    # Connect to S3
-    s3 = boto3.resource('s3')
-
     # Start client process
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as so:
         try:
             so.connect((host, port))
             print(f'{get_message(so)}', end='', flush=True)
             while True:
-                command = input()
-                so.sendall(bytes(command + '\n', 'utf-8'))
+                command = input() + '\n'
+                so.sendall(bytes(command, 'utf-8'))
                 raw_response = get_message(so)
                 response, exitOrNot = response_handler(raw_response)
                 if exitOrNot:

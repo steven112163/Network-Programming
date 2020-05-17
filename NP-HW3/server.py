@@ -139,9 +139,8 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         bucket_name = '0510002-' + command[1].lower().replace('_', '') + '-account'
         self.conn.execute(
-            'INSERT INTO USERS (Username, BucketName, Email, Password, NumOfMails) VALUES (:username, :bucket_name, :email, :password, :mails)',
-            {"username": command[1], "bucket_name": bucket_name, "email": command[2], "password": command[3],
-             "mails": 0})
+            'INSERT INTO USERS (Username, BucketName, Email, Password) VALUES (:username, :bucket_name, :email, :password)',
+            {"username": command[1], "bucket_name": bucket_name, "email": command[2], "password": command[3]})
         self.conn.commit()
         self.send('Register successfully.', bucket_name)
 
@@ -585,8 +584,7 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether user exists
-        cursor = self.conn.execute('SELECT BucketName, NumOfMails FROM USERS WHERE Username=:username',
-                                   {"username": command[1]})
+        cursor = self.conn.execute('SELECT BucketName FROM USERS WHERE Username=:username', {"username": command[1]})
         recipient = cursor.fetchone()
         if recipient is None:
             self.send(f'{command[1]} does not exist.')
@@ -601,18 +599,10 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Get object name
         object_name = 'mail-' + str(datetime.now()).replace(' ', 'T').replace(':', '-') + '.txt'
 
-        # Get new total number of received mails in recipient's mailbox
-        num_mails = recipient["NumOfMails"] + 1
-
-        # Update the number of mails in USERS table
-        self.conn.execute('UPDATE USERS SET NumOfMails=:mails WHERE Username=:username',
-                          {"mails": num_mails, "username": command[1]})
-
         # Create new mail
         self.conn.execute(
-            'INSERT INTO MAILS (ObjectName, Recipient, MailID, Subject, Sender, MailDate) VALUES (:object_name, :recipient, :mailID, :subject, :sender, date("now", "localtime"))',
-            {"object_name": object_name, "recipient": command[1], "mailID": num_mails, "subject": subject,
-             "sender": self.current_user})
+            'INSERT INTO MAILS (ObjectName, Recipient, Subject, Sender, MailDate) VALUES (:object_name, :recipient, :subject, :sender, date("now", "localtime"))',
+            {"object_name": object_name, "recipient": command[1], "subject": subject, "sender": self.current_user})
         self.conn.commit()
         self.send('Sent successfully.', f'{recipient["BucketName"]}|{object_name}|{content}')
 
@@ -631,15 +621,15 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Get all user's mails from his/her mailbox
-        cursor = self.conn.execute('SELECT mailID, Subject, Sender, MailDate FROM MAILS WHERE Recipient=:recipient',
+        cursor = self.conn.execute('SELECT Subject, Sender, MailDate FROM MAILS WHERE Recipient=:recipient',
                                    {"recipient": self.current_user})
 
         # Show mails
         message = '\tID\tSubject\tFrom\tDate'
-        for mail in cursor:
+        for mailID, mail in enumerate(cursor, 1):
             split_date = mail["MailDate"].split('-')
             date = split_date[1] + '/' + split_date[2]
-            message = message + f'\n\t{mail["mailID"]}\t{mail["Subject"]}\t\t{mail["Sender"]}\t{date}'
+            message = message + f'\n\t{mailID}\t{mail["Subject"]}\t\t{mail["Sender"]}\t{date}'
         self.send(message)
 
     def retr_mail_handler(self, command):
@@ -664,9 +654,13 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Check whether mail exists
         cursor = self.conn.execute(
-            'SELECT ObjectName, Subject, Sender, MailDate FROM MAILS WHERE mailID=:id AND Recipient=:username',
-            {"id": command[1], "username": self.current_user})
-        mail = cursor.fetchone()
+            'SELECT ObjectName, Subject, Sender, MailDate FROM MAILS WHERE Recipient=:recipient',
+            {"recipient": self.current_user})
+        mail = None
+        for mailID, row in enumerate(cursor, 1):
+            if mailID == int(command[1]):
+                mail = row
+                break
         if mail is None:
             self.send('No such mail.')
             self.warning(f'Mail ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
@@ -704,9 +698,12 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Check whether mail exists
         cursor = self.conn.execute(
-            'SELECT ObjectName FROM MAILS WHERE mailID=:id AND Recipient=:username',
-            {"id": command[1], "username": self.current_user})
-        mail = cursor.fetchone()
+            'SELECT ObjectName FROM MAILS WHERE Recipient=:recipient', {"recipient": self.current_user})
+        mail = None
+        for mailID, row in enumerate(cursor, 1):
+            if mailID == int(command[1]):
+                mail = row
+                break
         if mail is None:
             self.send('No such mail.')
             self.warning(f'Mail ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
@@ -718,8 +715,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         bucket_name = cursor.fetchone()["BucketName"]
 
         # Delete mail
-        self.conn.execute('DELETE FROM MAILS WHERE mailID=:id AND Recipient=:username',
-                          {"id": command[1], "username": self.current_user})
+        self.conn.execute('DELETE FROM MAILS WHERE ObjectName=:object_name AND Recipient=:username',
+                          {"object_name": mail["ObjectName"], "username": self.current_user})
         self.conn.commit()
         self.send('Mail deleted.', f'{bucket_name}|{mail["ObjectName"]}')
 
@@ -782,6 +779,19 @@ if __name__ == '__main__':
                             PostDate TEXT NOT NULL,
                             FOREIGN KEY(BoardName) REFERENCES BOARDS(BoardName),
                             FOREIGN KEY(Author) REFERENCES USERS(Username)
+                        );''')
+
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="MAILS";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE MAILS(
+                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ObjectName TEXT NOT NULL,
+                            Recipient TEXT NOT NULL,
+                            Subject TEXT NOT NULL,
+                            Sender TEXT NOT NULL,
+                            MailDate TEXT NOT NULL,
+                            FOREIGN KEY(Recipient) REFERENCES USERS(Username),
+                            FOREIGN KEY(Sender) REFERENCES USERS(Username)
                         );''')
     conn.close()
 

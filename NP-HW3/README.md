@@ -12,7 +12,6 @@ CREATE TABLE USERS(
     BucketName TEXT NOT NULL UNIQUE,
     Email TEXT NOT NULL,
     Password TEXT NOT NULL,
-    NumOfMails INTEGER NOT NULL
 );
 ```
 
@@ -50,7 +49,6 @@ CREATE TABLE MAILS(
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     ObjectName TEXT NOT NULL,
     Recipient TEXT NOT NULL,
-    MailID INTEGER NOT NULL,
     Subject TEXT NOT NULL,
     Sender TEXT NOT NULL,
     MailDate TEXT NOT NULL,

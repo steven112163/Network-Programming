@@ -129,11 +129,8 @@ def comment_handler(res):
     :return: None
     """
     s3 = boto3.resource('s3')
-    content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
-    content = content + f'\n\t{res[3]}'
-    s3 = boto3.client('s3')
-    s3.put_object(
-        Bucket=res[1],
+    content = s3.Object(res[1], res[2]).get()['Body'].read().decode() + f'\n\t{res[3]}'
+    s3.Bucket(res[1]).put_object(
         Key=res[2],
         Body=content
     )

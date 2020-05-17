@@ -145,7 +145,12 @@ def mail_to_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    s3 = boto3.client('s3')
+    s3.put_object(
+        Bucket=res[1],
+        Key=res[2],
+        Body=res[3]
+    )
 
 
 def retr_mail_handler(res):
@@ -154,7 +159,12 @@ def retr_mail_handler(res):
     :param res: response from server
     :return: String of the mail
     """
-    pass
+    s3 = boto3.resource('s3')
+    content = s3.Object(res[1], res[2]).get()['Body'].read().decode()
+    return f'\tSubject\t:{res[3]}\n' \
+           f'\tFrom\t:{res[4]}\n' \
+           f'\tDate\t:{res[5]}\n' \
+           f'{content}\n% '
 
 
 def delete_mail_handler(res):
@@ -163,7 +173,8 @@ def delete_mail_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    s3 = boto3.resource('s3')
+    s3.Object(res[1], res[2]).delete()
 
 
 if __name__ == '__main__':

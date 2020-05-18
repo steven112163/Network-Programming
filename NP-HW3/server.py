@@ -318,15 +318,15 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Get boards based on given key word
         if key_word:
-            cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS WHERE BoardName LIKE :key_word',
+            cursor = self.conn.execute('SELECT BoardName, Moderator FROM BOARDS WHERE BoardName LIKE :key_word',
                                        {"key_word": key_word})
         else:
-            cursor = self.conn.execute('SELECT ID, BoardName, Moderator FROM BOARDS')
+            cursor = self.conn.execute('SELECT BoardName, Moderator FROM BOARDS')
 
         # Show boards
         message = '\tIndex\tName\t\tModerator'
-        for board in cursor:
-            message = message + f'\n\t{board["ID"]}\t{board["BoardName"]}\t\t{board["Moderator"]}'
+        for index, board in enumerate(cursor, 1):
+            message = message + f'\n\t{index}\t{board["BoardName"]}\t\t{board["Moderator"]}'
         self.send(message)
 
     def list_post_handler(self, command):

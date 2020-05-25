@@ -23,7 +23,6 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.row_factory = sqlite3.Row
         self.send(
             '********************************\n** Welcome to the BBS server. **\n********************************')
-        # self.wfile.write(bytes('% ', 'utf-8'))
         self.current_user = None
         while True:
             try:

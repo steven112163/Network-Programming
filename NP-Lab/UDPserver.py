@@ -1,5 +1,6 @@
 import sys
 import argparse
+import sqlite3
 from socketserver import ThreadingUDPServer, DatagramRequestHandler
 from datetime import datetime
 
@@ -17,8 +18,31 @@ class ThreadedServerHandler(DatagramRequestHandler):
         """
         print('New connection.')
         self.info(f'Connection from {self.client_address[0]}({self.client_address[1]})')
-        self.send(
-            '********************************\n** Welcome to the BBS server. **\n********************************')
+        self.conn = sqlite3.connect('server_0510002.db')
+        self.conn.row_factory = sqlite3.Row
+        self.socket = self.request[1]
+
+        global clients
+        self.client = repr(self.client_address)
+        if self.client not in clients:
+            self.send(
+                '********************************\n** Welcome to the BBS server. **\n********************************')
+            clients[self.client] = None
+        else:
+            try:
+                command = str(self.request[0], 'utf-8').strip().split()
+                if command:
+                    if command[0] == 'exit':
+                        self.conn.close()
+                        clients.pop(self.client, None)
+                        self.socket.sendto(bytes('exit', 'utf-8'), self.client_address)
+                        self.info(f'Exit from {self.client_address[0]}({self.client_address[1]})')
+                        return
+                    self.command_handler(command)
+                else:
+                    self.socket.sendto(bytes('% ', 'utf-8'), self.client_address)
+            except Exception as e:
+                print(str(e))
 
     def send(self, msg):
         """
@@ -27,8 +51,7 @@ class ThreadedServerHandler(DatagramRequestHandler):
         :param res: optional response to client
         :return: None
         """
-        socket = self.request[1]
-        socket.sendto(bytes(f'{msg}\n', 'utf-8'), self.client_address)
+        self.socket.sendto(bytes(f'{msg}\n% ', 'utf-8'), self.client_address)
 
     def info(self, log):
         """
@@ -51,6 +74,117 @@ class ThreadedServerHandler(DatagramRequestHandler):
         if verbosity > 0:
             print(f'[\033[93mWARN\033[00m] {log}')
             sys.stdout.flush()
+
+    def command_handler(self, command):
+        """
+        Function handling entered command
+        :param command: Command sent from client
+        :return: None
+        """
+        if command[0] == 'register':
+            self.register_handler(command)
+        elif command[0] == 'login':
+            self.login_handler(command)
+        elif command[0] == 'logout':
+            self.logout_handler(command)
+        elif command[0] == 'whoami':
+            self.whoami_handler(command)
+        else:
+            self.warning(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+    def register_handler(self, command):
+        """
+        Function handling register command
+        Need to tell client bucket name
+        :param command: register <username> <email> <password
+        :return: None
+        """
+
+        # Check arguments
+        self.info(f'Register from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 4:
+            self.send('Usage: register <username> <email> <password>')
+            self.warning(f'Incomplete register command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether username is used
+        cursor = self.conn.execute('SELECT Username from USERS WHERE Username=:username', {"username": command[1]})
+        if cursor.fetchone() is not None:
+            self.send('Username is already used.')
+            self.warning(f'Username from {self.client_address[0]}({self.client_address[1]}) is used')
+            return
+
+        self.conn.execute(
+            'INSERT INTO USERS (Username, Email, Password) VALUES (:username, :email, :password)',
+            {"username": command[1], "email": command[2], "password": command[3]})
+        self.conn.commit()
+        self.send('Register successfully.')
+
+    def login_handler(self, command):
+        """
+        Function handling login command
+        :param command: login <username> <password>
+        :return: None
+        """
+
+        # Check arguments
+        self.info(f'Login from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 3:
+            self.send('Usage: login <username> <password>')
+            self.warning(f'Incomplete login command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check if user is already logged in
+        if clients[self.client] is not None:
+            self.send('Please logout first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged in')
+            return
+
+        cursor = self.conn.execute('SELECT Username, Password FROM USERS WHERE Username=:username',
+                                   {"username": command[1]})
+        row = cursor.fetchone()
+        if row is None:
+            self.send('Login failed.')
+            self.warning(f"Username entered from {self.client_address[0]}({self.client_address[1]}) isn't in DB")
+            return
+        if command[2] != row['Password']:
+            self.send('Login failed.')
+            self.warning(f'Password entered from {self.client_address[0]}({self.client_address[1]}) is wrong')
+            return
+
+        clients[self.client] = row['Username']
+        self.send(f'Welcome, {clients[self.client]}.')
+
+    def logout_handler(self, command):
+        """
+        Function handling logout command
+        :param command: logout
+        :return: None
+        """
+        self.info(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+        if clients[self.client] is not None:
+            self.send(f'Bye, {clients[self.client]}.')
+            clients[self.client_address] = None
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
+        else:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+
+    def whoami_handler(self, command):
+        """
+        Function handling whoami command
+        :param command: whoami
+        :return: None
+        """
+        self.info(f'Whoami from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+
+        if clients[self.client] is not None:
+            self.send(f'{clients[self.client]}.')
+            self.warning(f'Current user check from {self.client_address[0]}({self.client_address[1]})')
+        else:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
 
 def parse_arguments():
@@ -78,6 +212,21 @@ if __name__ == '__main__':
     port = args.port
 
     verbosity = args.verbosity
+
+    # Dictionary recording all clients' address and port
+    clients = {}
+
+    # Create database and table
+    conn = sqlite3.connect('server_0510002.db')
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="USERS";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE USERS (
+                            UID      INTEGER PRIMARY KEY AUTOINCREMENT,
+                            Username TEXT NOT NULL UNIQUE,
+                            Email    TEXT NOT NULL,
+                            Password TEXT NOT NULL
+                        );''')
+    conn.close()
 
     ThreadingUDPServer.allow_reuse_address = True
     ThreadingUDPServer.daemon_threads = True

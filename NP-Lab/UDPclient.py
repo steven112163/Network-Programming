@@ -21,6 +21,8 @@ def get_message(sock):
     message = []
     while True:
         part = sock.recv(1024)
+        if not part:
+            continue
         message.append(str(part, 'utf-8'))
         if len(part) < 1024:
             break
@@ -43,7 +45,15 @@ if __name__ == '__main__':
     # Start client process
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as so:
         try:
-            so.sendto(bytes('\n', 'utf-8'), (host, port))
+            so.sendto(bytes('', 'utf-8'), (host, port))
             print(f'{get_message(so)}', end='', flush=True)
+            while True:
+                command = input() + '\n'
+                so.sendto(bytes(command, 'utf-8'), (host, port))
+                response = get_message(so)
+                if response == 'exit':
+                    so.close()
+                    break
+                print(f'{response}', end='', flush=True)
         except KeyboardInterrupt:
             pass

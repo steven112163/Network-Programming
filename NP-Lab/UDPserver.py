@@ -16,8 +16,6 @@ class ThreadedServerHandler(DatagramRequestHandler):
         Function handling current connection.
         :return: None
         """
-        print('New connection.')
-        self.info(f'Connection from {self.client_address[0]}({self.client_address[1]})')
         self.conn = sqlite3.connect('server_0510002.db')
         self.conn.row_factory = sqlite3.Row
         self.socket = self.request[1]
@@ -25,6 +23,8 @@ class ThreadedServerHandler(DatagramRequestHandler):
         global clients
         self.client = repr(self.client_address)
         if self.client not in clients:
+            print('New connection.')
+            self.info(f'Connection from {self.client_address[0]}({self.client_address[1]})')
             self.send(
                 '********************************\n** Welcome to the BBS server. **\n********************************')
             clients[self.client] = None
@@ -165,7 +165,7 @@ class ThreadedServerHandler(DatagramRequestHandler):
 
         if clients[self.client] is not None:
             self.send(f'Bye, {clients[self.client]}.')
-            clients[self.client_address] = None
+            clients[self.client] = None
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
         else:
             self.send('Please login first.')

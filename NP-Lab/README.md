@@ -14,6 +14,15 @@ CREATE TABLE USERS(
 );
 ```
 
+### Files
+```sqlite
+CREATE TABLE FILES(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    FileName TEXT NOT NULL UNIQUE,
+    FileType TEXT NOT NULL
+);
+```
+
 
 
 ## Run

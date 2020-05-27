@@ -49,8 +49,15 @@ def download_handler(res):
     :param res: response from server
     :return: None
     """
-    with open(f'ClientStorage/{res[1]}', 'w') as f:
-        f.write(res[2])
+    if res[2] == 'binary':
+        content = b''
+        for b in res[3:]:
+            content = content + bytes(b, 'utf-8')
+        with open(f'ClientStorage/{res[1]}', 'bw') as f:
+            f.write(content)
+    else:
+        with open(f'ClientStorage/{res[1]}', 'w') as f:
+            f.write(res[3])
 
 
 if __name__ == '__main__':

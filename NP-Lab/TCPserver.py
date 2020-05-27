@@ -39,17 +39,20 @@ class ThreadedServerHandler(StreamRequestHandler):
             except Exception as e:
                 print(str(e))
 
-    def send(self, msg, res=None):
+    def send(self, msg, res=None, content=None):
         """
         Send message to user
         :param msg: message
         :param res: optional response to client
+        :param content: optional byte response to client
         :return: None
         """
         if res is None:
             self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
-        else:
+        elif content is None:
             self.wfile.write(bytes(f'{msg}\n% |{res}', 'utf-8'))
+        else:
+            self.wfile.write(bytes(f'{msg}\n% |{res}|', 'utf-8') + content)
 
     def info(self, log):
         """
@@ -233,15 +236,19 @@ class ThreadedServerHandler(StreamRequestHandler):
             return
 
         # Check whether file exists
-        cursor = self.conn.execute('SELECT FileName FROM FILES WHERE ID=:id', {"id": command[1]})
+        cursor = self.conn.execute('SELECT FileName, FileType FROM FILES WHERE ID=:id', {"id": command[1]})
         file = cursor.fetchone()
         if file is None:
             self.send('File does not exist.')
             self.warning(f'File ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
-        with open(f'ServerStorage/{file["FileName"]}', 'r') as f:
-            self.send('File downloaded successfully.', f'{file["FileName"]}|{f.read()}')
+        if file["FileType"] == 'binary':
+            with open(f'ServerStorage/{file["FileName"]}', 'br') as f:
+                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}', f.read())
+        else:
+            with open(f'ServerStorage/{file["FileName"]}', 'r') as f:
+                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}|{f.read()}')
 
 
 def parse_arguments():
@@ -291,6 +298,10 @@ if __name__ == '__main__':
         conn.execute(
             'INSERT INTO FILES (FileName, FileType) VALUES (:file_name, :file_type)',
             {"file_name": 'test_text.txt', "file_type": 'text'})
+        conn.commit()
+        conn.execute(
+            'INSERT INTO FILES (FileName, FileType) VALUES (:file_name, :file_type)',
+            {"file_name": 'hello.bin', "file_type": 'binary'})
         conn.commit()
     conn.close()
 

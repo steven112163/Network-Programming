@@ -38,20 +38,25 @@ class ThreadedServerHandler(DatagramRequestHandler):
                         self.socket.sendto(bytes('exit', 'utf-8'), self.client_address)
                         self.info(f'Exit from {self.client_address[0]}({self.client_address[1]})')
                         return
+                    elif command[0] == 'start':
+                        return
                     self.command_handler(command)
                 else:
                     self.socket.sendto(bytes('% ', 'utf-8'), self.client_address)
             except Exception as e:
                 print(str(e))
 
-    def send(self, msg):
+    def send(self, msg, res=None):
         """
         Send message to user
         :param msg: message
         :param res: optional response to client
         :return: None
         """
-        self.socket.sendto(bytes(f'{msg}\n% ', 'utf-8'), self.client_address)
+        if res is None:
+            self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+        else:
+            self.wfile.write(bytes(f'{msg}\n% |{res}', 'utf-8'))
 
     def info(self, log):
         """
@@ -89,6 +94,10 @@ class ThreadedServerHandler(DatagramRequestHandler):
             self.logout_handler(command)
         elif command[0] == 'whoami':
             self.whoami_handler(command)
+        elif command[0] == 'list-file':
+            self.list_file_handler(command)
+        elif command[0] == 'download':
+            self.download_handler(command)
         else:
             self.warning(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
@@ -186,6 +195,76 @@ class ThreadedServerHandler(DatagramRequestHandler):
             self.send('Please login first.')
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
 
+    def list_file_handler(self, command):
+        """
+        Function handling list-file command
+        :param command: list-file ##<key>
+        :return: None
+        """
+        # Check arguments
+        self.info(f'List-file from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) > 2:
+            self.send('Usage: list-file ##<key>')
+            self.warning(f'Incomplete list-file command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        elif len(command) == 2:
+            key_word = command[1][2:]
+            key_word = '%' + key_word + '%'
+        else:
+            key_word = None
+
+        # Get boards based on given key word
+        if key_word:
+            cursor = self.conn.execute('SELECT ID, FileName, FileType FROM FILES WHERE FileName LIKE :key_word',
+                                       {"key_word": key_word})
+        else:
+            cursor = self.conn.execute('SELECT ID, FileName, FileType FROM FILES')
+
+        # Show files
+        message = '\tIndex\tName\t\tType'
+        for row in cursor:
+            message = message + f'\n\t{row["ID"]}\t{row["FileName"]}\t{row["FileType"]}'
+        self.send(message)
+
+    def download_handler(self, command):
+        """
+        Function handling download command
+        :param command: download <file-id>
+        :return: None
+        """
+        # Check arguments
+        self.info(f'Download from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if len(command) != 2:
+            self.send('Usage: download <file-id>')
+            self.warning(f'Incomplete download command from {self.client_address[0]}({self.client_address[1]})')
+            return
+
+        # Check whether file exists
+        cursor = self.conn.execute('SELECT FileName, FileType FROM FILES WHERE ID=:id', {"id": command[1]})
+        file = cursor.fetchone()
+        if file is None:
+            self.send('File does not exist.')
+            self.warning(f'File ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        if file["FileType"] == 'binary':
+            with open(f'ServerStorage/{file["FileName"]}', 'br') as f:
+                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}')
+                self.file_transfer(f)
+        else:
+            with open(f'ServerStorage/{file["FileName"]}', 'r') as f:
+                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}')
+                self.file_transfer(f)
+
+    def file_transfer(self, f):
+        """
+        Function handling file transfer
+        :param f: file object
+        :return: None
+        """
+        # TODO
+        pass
+
 
 def parse_arguments():
     """
@@ -226,6 +305,22 @@ if __name__ == '__main__':
                             Email    TEXT NOT NULL,
                             Password TEXT NOT NULL
                         );''')
+
+    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="FILES";')
+    if cursor.fetchone() is None:
+        conn.execute('''CREATE TABLE FILES (
+                            ID      INTEGER PRIMARY KEY AUTOINCREMENT,
+                            FileName TEXT NOT NULL UNIQUE,
+                            FileType    TEXT NOT NULL
+                        );''')
+        conn.execute(
+            'INSERT INTO FILES (FileName, FileType) VALUES (:file_name, :file_type)',
+            {"file_name": 'test_text.txt', "file_type": 'text'})
+        conn.commit()
+        conn.execute(
+            'INSERT INTO FILES (FileName, FileType) VALUES (:file_name, :file_type)',
+            {"file_name": 'hello.bin', "file_type": 'binary'})
+        conn.commit()
     conn.close()
 
     ThreadingUDPServer.allow_reuse_address = True

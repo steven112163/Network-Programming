@@ -30,6 +30,39 @@ def get_message(sock):
     return ''.join(message)
 
 
+def response_handler(raw_res):
+    """
+    Function handling responses
+    :param raw_res: response from server
+    :return: Message needs to be showed. And True if response is 'exit', False otherwise.
+    """
+    res = raw_res.split('|')
+    if res[0] == 'exit':
+        return '', True
+    elif res[0] == 'File downloaded successfully.\n% ':
+        download_handler(res)
+
+    return res[0], False
+
+
+def download_handler(res):
+    """
+    Function handling download response
+    :param res: response from server
+    :return: None
+    """
+    # TODO: file transfer, file is not in res[3:]
+    if res[2] == 'binary':
+        content = b''
+        for b in res[3:]:
+            content = content + bytes(b, 'utf-8')
+        with open(f'ClientStorage/{res[1]}', 'bw') as f:
+            f.write(content)
+    else:
+        with open(f'ClientStorage/{res[1]}', 'w') as f:
+            f.write(res[3])
+
+
 if __name__ == '__main__':
     """
     Client
@@ -50,8 +83,9 @@ if __name__ == '__main__':
             while True:
                 command = input() + '\n'
                 so.sendto(bytes(command, 'utf-8'), (host, port))
-                response = get_message(so)
-                if response == 'exit':
+                raw_response = get_message(so)
+                response, exitOrNot = response_handler(raw_response)
+                if exitOrNot:
                     so.close()
                     break
                 print(f'{response}', end='', flush=True)

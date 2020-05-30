@@ -1,6 +1,7 @@
 import socket
 import argparse
 import struct
+import sys
 from select import select
 
 
@@ -105,11 +106,17 @@ def download_handler(res, sock):
             sock.sendto(response_struct.pack(packet_seq, end_flag), (host, temp_port))
             packet_seq = packet_seq + 1
             content = content + res_packet[2]
+            content = content[:int(res[3])]
+
+        sys.stdout.write('\r')
+        percentage = int(len(content) / int(res[3])) * 20
+        sys.stdout.write(f"[{'='*percentage}{' '*(20-percentage)}] {5*percentage}%")
+        sys.stdout.flush()
 
         if end_flag == 1:
+            print()
             break
 
-    content = content[:int(res[3])]
     if res[2] == 'binary':
         with open(f'ClientStorage/{res[1]}', 'bw') as f:
             f.write(content)

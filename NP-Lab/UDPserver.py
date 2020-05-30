@@ -1,8 +1,12 @@
 import sys
 import argparse
 import sqlite3
+import os
+import struct
+import socket
 from socketserver import ThreadingUDPServer, DatagramRequestHandler
 from datetime import datetime
+from collections import OrderedDict
 
 
 class ThreadedServerHandler(DatagramRequestHandler):
@@ -54,9 +58,9 @@ class ThreadedServerHandler(DatagramRequestHandler):
         :return: None
         """
         if res is None:
-            self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+            self.socket.sendto(bytes(f'{msg}\n% ', 'utf-8'), self.client_address)
         else:
-            self.wfile.write(bytes(f'{msg}\n% |{res}', 'utf-8'))
+            self.socket.sendto(bytes(f'{msg}\n% |{res}', 'utf-8'), self.client_address)
 
     def info(self, log):
         """
@@ -247,23 +251,94 @@ class ThreadedServerHandler(DatagramRequestHandler):
             self.warning(f'File ID from {self.client_address[0]}({self.client_address[1]}) does not exist')
             return
 
+        self.info(f'Start sending file to {self.client_address[0]}({self.client_address[1]})')
+        file_size = os.path.getsize(f'ServerStorage/{file["FileName"]}')
         if file["FileType"] == 'binary':
             with open(f'ServerStorage/{file["FileName"]}', 'br') as f:
-                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}')
-                self.file_transfer(f)
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as so:
+                    so.bind((host, 0))
+                    self.send('File downloaded successfully.',
+                              f'{file["FileName"]}|{file["FileType"]}|{file_size}|{so.getsockname()[1]}')
+                    self.file_transfer(f, so, file["FileType"])
         else:
             with open(f'ServerStorage/{file["FileName"]}', 'r') as f:
-                self.send('File downloaded successfully.', f'{file["FileName"]}|{file["FileType"]}')
-                self.file_transfer(f)
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as so:
+                    so.bind((host, 0))
+                    self.send('File downloaded successfully.',
+                              f'{file["FileName"]}|{file["FileType"]}|{file_size}|{so.getsockname()[1]}')
+                    self.file_transfer(f, so, file["FileType"])
+        self.info(f'File transferred to {self.client_address[0]}({self.client_address[1]})')
 
-    def file_transfer(self, f):
+    def file_transfer(self, f, so, file_type):
         """
         Function handling file transfer
         :param f: file object
+        :param so: socket object
+        :param file_type: 'text' or 'binary'
         :return: None
         """
-        # TODO
-        pass
+
+        # Setup packet structure with (packet_seq, end, 1024 characters)
+        # Packet is 4 + 4 + 1024 = 1032 bytes
+        packet_struct = struct.Struct('II1024s')
+
+        # Setup response structure with (packet_seq, end)
+        # Packet is 4 + 4 = 8 bytes
+        response_struct = struct.Struct('II')
+
+        # Sequence number of packet that we have to send next time
+        packet_seq = 1
+
+        # Setup ordered dict for storing previous data
+        previous_data = OrderedDict()
+
+        # Setup retransmission flag
+        retransmission_flag = False
+
+        # Wait for client to start
+        while True:
+            res_packet = so.recv(8)
+            if res_packet:
+                break
+
+        # Start sending
+        while True:
+            # Send previous data if retransmission is needed, send file data otherwise
+            if retransmission_flag:
+                data = previous_data[packet_seq]
+            else:
+                data = f.read(1024)
+                previous_data[packet_seq] = data
+
+            # Tell client if it's end of file
+            if file_type == 'binary':
+                end = 1 if data == b'' else 0
+                so.sendto(packet_struct.pack(packet_seq, end, data), self.client_address)
+            else:
+                end = 1 if data == '' else 0
+                so.sendto(packet_struct.pack(packet_seq, end, bytes(data, 'utf-8')), self.client_address)
+            self.info(f'Send seq:{packet_seq}, end:{end} to {self.client_address}')
+
+            # Refrain number of data in previous_data to 10
+            if len(previous_data) > 10:
+                previous_data.popitem(last=False)
+
+            # Get response from client
+            while True:
+                res_packet = so.recv(8)
+                if res_packet:
+                    break
+            res = response_struct.unpack(res_packet)
+
+            # Flag retransmission if sequence number is different
+            if res[0] != packet_seq:
+                retransmission_flag = True
+            else:
+                packet_seq = packet_seq + 1
+                retransmission_flag = False
+                # If client receives all packets, then break
+                if end == 1:
+                    break
 
 
 def parse_arguments():

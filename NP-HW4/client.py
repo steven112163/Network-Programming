@@ -1,5 +1,8 @@
 import socket
 import argparse
+import sys
+from select import select
+from kafka import KafkaConsumer
 
 
 def parse_arguments():
@@ -28,6 +31,40 @@ def get_message(sock):
     return ''.join(message)
 
 
+def response_handler(raw_res):
+    """
+    Function handling responses
+    :param raw_res: response from server
+    :return: Message needs to be showed. And True if response is 'exit', False otherwise.
+    """
+    res = raw_res.split('|')
+    if res[0] == 'exit':
+        return '', True
+    elif res[0] == 'Subscribe successfully.\n% ':
+        subscribe_handler(res)
+    elif res[0] == 'Unsubscribe successfully.\n% ':
+        unsubscribe_handler(res)
+
+    return res[0], False
+
+
+def subscribe_handler(res):
+    """
+    Function handling subscribe response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
+
+def unsubscribe_handler(res):
+    """
+    Function handling unsubscribe response
+    :param res: response from server
+    :return: None
+    """
+    pass
+
 
 if __name__ == '__main__':
     """
@@ -41,18 +78,29 @@ if __name__ == '__main__':
     host = args.host
     port = args.port
 
+    # Setup Kafka consumer
+    consumer = KafkaConsumer()
+
     # Start client process
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as so:
         try:
             so.connect((host, port))
             print(f'{get_message(so)}', end='', flush=True)
             while True:
-                command = input() + '\n'
-                so.sendall(bytes(command, 'utf-8'))
-                response = get_message(so)
-                if response == 'exit':
-                    so.close()
-                    break
-                print(f'{response}', end='', flush=True)
+                ready = select([sys.stdin], [], [], 0.5)
+                if ready[0]:
+                    command = input() + '\n'
+                    so.sendall(bytes(command, 'utf-8'))
+                    raw_response = get_message(so)
+                    response, exitOrNot = response_handler(raw_response)
+                    if exitOrNot:
+                        so.close()
+                        break
+                    print(f'{response}', end='', flush=True)
+                else:
+                    consumer.poll()
+                    for msg in consumer:
+                        print(str(msg.value, 'utf-8'))
+                        print('% ', end='')
         except KeyboardInterrupt:
             pass

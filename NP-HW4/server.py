@@ -3,6 +3,7 @@ import argparse
 import sqlite3
 from socketserver import ThreadingTCPServer, StreamRequestHandler
 from datetime import datetime
+from kafka import KafkaProducer
 
 
 class ThreadedServerHandler(StreamRequestHandler):
@@ -39,13 +40,17 @@ class ThreadedServerHandler(StreamRequestHandler):
             except Exception as e:
                 print(str(e))
 
-    def send(self, msg):
+    def send(self, msg, res=None):
         """
         Send message to user
         :param msg: message
+        :param res: optional response to client
         :return: None
         """
-        self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+        if res is None:
+            self.wfile.write(bytes(f'{msg}\n% ', 'utf-8'))
+        else:
+            self.wfile.write(bytes(f'{msg}\n% |{res}', 'utf-8'))
 
     def info(self, log):
         """
@@ -107,8 +112,15 @@ class ThreadedServerHandler(StreamRequestHandler):
             self.retr_mail_handler(command)
         elif command[0] == 'delete-mail':
             self.delete_mail_handler(command)
+        elif command[0] == 'subscribe':
+            self.subscribe_handler(command)
+        elif command[0] == 'unsubscribe':
+            self.unsubscribe_handler(command)
+        elif command[0] == 'list-sub':
+            self.list_sub_handler(command)
         else:
             self.warning(f'Invalid command from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+            self.send('Invalid command')
 
     def register_handler(self, command):
         """
@@ -183,6 +195,8 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.info(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
+            self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username', {"username": self.current_user})
+            self.conn.commit()
             self.send(f'Bye, {self.current_user}.')
             self.current_user = None
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
@@ -683,6 +697,202 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.conn.commit()
         self.send('Mail deleted.')
 
+    def subscribe_handler(self, command):
+        """
+        Function handling subscribe command
+        :param command: subscribe --board/author <board/author-name> --keyword <keyword>
+        :return: None
+        """
+
+        # Check arguments
+        self.info(f'Subscribe from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if '--board' in command:
+            board_idx = command.index('--board')
+            author_idx = None
+        elif '--author' in command:
+            board_idx = None
+            author_idx = command.index('--author')
+        else:
+            self.send('Usage: subscribe --board/author <board/author-name> --keyword <keyword>')
+            self.warning(f'Incomplete subscribe command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        if '--keyword' in command:
+            keyword_idx = command.index('--keyword')
+        elif board_idx:
+            self.send('Usage: subscribe --board <board-name> --keyword <keyword>')
+            self.warning(f'Incomplete subscribe command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        else:
+            self.send('Usage: subscribe --author <author-name> --keyword <keyword>')
+            self.warning(f'Incomplete subscribe command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        if board_idx:
+            if board_idx != 1 or board_idx + 1 == keyword_idx or len(command) == keyword_idx + 1:
+                self.send('Usage: subscribe --board <board-name> --keyword <keyword>')
+                self.warning(f'Incomplete subscribe command from {self.client_address[0]}({self.client_address[1]})')
+                return
+        elif author_idx:
+            if author_idx != 1 or author_idx + 1 == keyword_idx or len(command) == keyword_idx + 1:
+                self.send('Usage: subscribe --author <author-name> --keyword <keyword>')
+                self.warning(f'Incomplete subscribe command from {self.client_address[0]}({self.client_address[1]})')
+                return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Get board/author name and keyword
+        keyword = ''.join(command[keyword_idx + 1:])
+        if board_idx:
+            board = ''.join(command[board_idx + 1:keyword_idx])
+            author = None
+        else:
+            board = None
+            author = ''.join(command[author_idx + 1:keyword_idx])
+
+        # Check whether subscription exists
+        if board:
+            cursor = self.conn.execute(
+                'SELECT ID FROM SUBSCRIPTIONS WHERE Subcriber=:username AND BoardName=:board AND Keyword=:keyword',
+                {"username": self.current_user, "board": board, "keyword": keyword})
+        else:
+            cursor = self.conn.execute(
+                'SELECT ID FROM SUBSCRIPTIONS WHERE Subcriber=:username AND AuthorName=:author AND Keyword=:keyword',
+                {"username": self.current_user, "author": author, "keyword": keyword})
+        if cursor.fetchone() is not None:
+            self.send('Already subscribed.')
+            self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            return
+
+        # Setup subscription record in DB and tell client to subscribe
+        if board:
+            topic = board + keyword
+            topic = topic.replace(' ', '_')
+            self.conn.execute(
+                'INSERT INTO SUBSCRIPTIONS (Subscriber, BoardName, AuthorName, Keyword, Topic) VALUES (:username, :board, :author, :keyword, :topic)',
+                {"username": self.current_user, "board": board, "author": None, "keyword": keyword, "topic": topic})
+        else:
+            topic = author + keyword
+            topic = topic.replace(' ', '_')
+            self.conn.execute(
+                'INSERT INTO SUBSCRIPTIONS (Subscriber, BoardName, AuthorName, Keyword, Topic) VALUES (:username, :board, :author, :keyword, :topic)',
+                {"username": self.current_user, "board": None, "author": author, "keyword": keyword, "topic": topic})
+        self.conn.commit()
+        self.send('Subscribe successfully.', topic)
+
+    def unsubscribe_handler(self, command):
+        """
+        Function handling unsubscribe command
+        :param command: unsubscribe --board/author <board/author-name>
+        :return: None
+        """
+
+        # Check arguments
+        self.info(f'Unsubscribe from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if '--board' in command:
+            board_idx = command.index('--board')
+            author_idx = None
+        elif '--author' in command:
+            board_idx = None
+            author_idx = command.index('--author')
+        else:
+            self.send('Usage: unsubscribe --board/author <board/author-name>')
+            self.warning(f'Incomplete unsubscribe command from {self.client_address[0]}({self.client_address[1]})')
+            return
+        if board_idx:
+            if board_idx != 1 or len(command) == board_idx + 1:
+                self.send('Usage: unsubscribe --board <board-name>')
+                self.warning(f'Incomplete unsubscribe command from {self.client_address[0]}({self.client_address[1]})')
+                return
+        else:
+            if author_idx != 1 or len(command) == author_idx + 1:
+                self.send('Usage: unsubscribe --author <author-name>')
+                self.warning(f'Incomplete unsubscribe command from {self.client_address[0]}({self.client_address[1]})')
+                return
+
+        # Check whether user is logged in
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Get board/author name
+        if board_idx:
+            board = ''.join(command[board_idx + 1:])
+            author = None
+        else:
+            board = None
+            author = ''.join(command[author_idx + 1:])
+
+        # Check whether subscriptions exist
+        if board:
+            cursor = self.conn.execute(
+                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subcriber=:username AND BoardName=:board',
+                {"username": self.current_user, "board": board})
+            if cursor.fetchone() is None:
+                self.send(f"You haven't subscribed {board}")
+                self.warning(f"User from {self.client_address[0]}({self.client_address[1]}) haven't subscribe {board}")
+                return
+        else:
+            cursor = self.conn.execute(
+                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subcriber=:username AND AuthorName=:author',
+                {"username": self.current_user, "author": author})
+            if cursor.fetchone() is None:
+                self.send(f"You haven't subscribed {author}")
+                self.warning(f"User from {self.client_address[0]}({self.client_address[1]}) haven't subscribe {author}")
+                return
+
+        # Delete subscription records from DB and tell client to unsubscribe
+        if board:
+            self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username AND BoardName=:board',
+                              {"username": self.current_user, "board": board})
+        else:
+            self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username AND AuthorName=:author',
+                              {"username": self.current_user, "author": author})
+        self.send('Unsubscribe successfully.', '|'.join(row["Topic"] for row in cursor))
+
+    def list_sub_handler(self, command):
+        """
+        Function handling list-sub command
+        :param command: list-sub
+        :return: None
+        """
+        # Check whether user is logged in
+        self.info(f'List-sub from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
+        if not self.current_user:
+            self.send('Please login first.')
+            self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) is already logged out')
+            return
+
+        # Get all subscriptions of current user from DB
+        cursor = self.conn.execute(
+            'SELECT BoardName, AuthorName, Keyword FROM SUBSCRIPTIONS WHERE Subcriber=:username GROUP BY BoardName, AuthorName',
+            {"username": self.current_user})
+        boards = {}
+        authors = {}
+        for row in cursor:
+            if row["BoardName"] is not None:
+                if row["BoardName"] in boards:
+                    boards[row["BoardName"]].append(row["Keyword"])
+                else:
+                    boards[row["BoardName"]] = [row["Keyword"]]
+            else:
+                if row["AuthorName"] in authors:
+                    authors[row["AuthorName"]].append(row["Keyword"])
+                else:
+                    authors[row["AuthorName"]] = [row["Keyword"]]
+
+        # Send all subscriptions to client
+        message = '\tBoards:'
+        for k, b in boards.items():
+            message = message + f'\n\t\t{k}: ' + ', '.join(b)
+        message = message + '\n\tAuthors:'
+        for k, a in authors.items():
+            message = message + f'\n\t\t{k}: ' + ', '.join(a)
+        self.send(message)
+
 
 def parse_arguments():
     """
@@ -712,8 +922,8 @@ if __name__ == '__main__':
 
     # Create database and table
     conn = sqlite3.connect('server_0510002.db')
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="USERS";')
-    if cursor.fetchone() is None:
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="USERS";')
+    if cur.fetchone() is None:
         conn.execute('''CREATE TABLE USERS (
                             UID      INTEGER PRIMARY KEY AUTOINCREMENT,
                             Username TEXT NOT NULL UNIQUE,
@@ -721,8 +931,8 @@ if __name__ == '__main__':
                             Password TEXT NOT NULL
                         );''')
 
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="BOARDS";')
-    if cursor.fetchone() is None:
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="BOARDS";')
+    if cur.fetchone() is None:
         conn.execute('''CREATE TABLE BOARDS(
                             ID INTEGER PRIMARY KEY AUTOINCREMENT,
                             BoardName TEXT NOT NULL UNIQUE,
@@ -730,8 +940,8 @@ if __name__ == '__main__':
                             FOREIGN KEY(Moderator) REFERENCES USERS(Username)
                         );''')
 
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="POSTS";')
-    if cursor.fetchone() is None:
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="POSTS";')
+    if cur.fetchone() is None:
         conn.execute('''CREATE TABLE POSTS(
                             ID INTEGER PRIMARY KEY AUTOINCREMENT,
                             BoardName TEXT NOT NULL,
@@ -743,8 +953,8 @@ if __name__ == '__main__':
                             FOREIGN KEY(Author) REFERENCES USERS(Username)
                         );''')
 
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="COMMENTS";')
-    if cursor.fetchone() is None:
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="COMMENTS";')
+    if cur.fetchone() is None:
         conn.execute('''CREATE TABLE COMMENTS(
                             ID INTEGER PRIMARY KEY AUTOINCREMENT,
                             PostID INTEGER NOT NULL,
@@ -754,8 +964,8 @@ if __name__ == '__main__':
                             FOREIGN KEY(Username) REFERENCES USERS(Username)
                         );''')
 
-    cursor = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="MAILS";')
-    if cursor.fetchone() is None:
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="MAILS";')
+    if cur.fetchone() is None:
         conn.execute('''CREATE TABLE MAILS(
                             ID INTEGER PRIMARY KEY AUTOINCREMENT,
                             Recipient TEXT NOT NULL,
@@ -766,8 +976,24 @@ if __name__ == '__main__':
                             FOREIGN KEY(Recipient) REFERENCES USERS(Username),
                             FOREIGN KEY(Sender) REFERENCES USERS(Username)
                         );''')
+
+    cur = conn.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="SUBSCRIPTIONS";')
+    if cur.fetchone() is None:
+        conn.execute('''CREATE TABLE SUBSCRIPTIONS(
+                            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            Subscriber TEXT NOT NULL,
+                            BoardName TEXT,
+                            AuthorName TEXT,
+                            Keyword TEXT NOT NULL,
+                            Topic TEXT NOT NULL,
+                            FOREIGN KEY(Subscriber) REFERENCES USERS(Username)
+                        );''')
     conn.close()
 
+    # Setup Kafka producer
+    producer = KafkaProducer(bootstrap_servers='localhost:9092')
+
+    # Start server
     ThreadingTCPServer.allow_reuse_address = True
     ThreadingTCPServer.daemon_threads = True
     with ThreadingTCPServer((host, port), ThreadedServerHandler) as server:

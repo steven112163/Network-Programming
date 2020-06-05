@@ -64,6 +64,19 @@ CREATE TABLE MAILS(
 );
 ```
 
+### Subscriptions
+```sqlite
+CREATE TABLE SUBSCRIPTIONS(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Subscriber TEXT NOT NULL,
+    BoardName TEXT,
+    AuthorName TEXT,
+    Keyword TEXT NOT NULL,
+    Topic TEXT NOT NULL,
+    FOREIGN KEY(Subscriber) REFERENCES USERS(Username)
+);
+```
+
 ## Run
 ```shell script
 python3 ./server.py <host> <port> [-v (0-2)]

@@ -195,9 +195,11 @@ class ThreadedServerHandler(StreamRequestHandler):
         self.info(f'Logout from {self.client_address[0]}({self.client_address[1]})\n\t{command}')
 
         if self.current_user:
+            cursor = self.conn.execute('SELECT Topic FROM SUBSCRIPTIONS WHERE Subscriber=:username',
+                                       {"username": self.current_user})
             self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username', {"username": self.current_user})
             self.conn.commit()
-            self.send(f'Bye, {self.current_user}.')
+            self.send(f'Bye, {self.current_user}.', '|'.join(row["Topic"] for row in cursor))
             self.current_user = None
             self.warning(f'User from {self.client_address[0]}({self.client_address[1]}) log out')
         else:
@@ -291,6 +293,27 @@ class ThreadedServerHandler(StreamRequestHandler):
         title = ' '.join(command[title_idx + 1:content_idx])
         content = ' '.join(command[content_idx + 1:])
         content = '\t--\n\t' + content.replace('<br>', '\n\t') + '\n\t--'
+
+        # Inform subscribers
+        global producer
+        cursor = self.conn.execute(
+            'SELECT BoardName, AuthorName, Keyword, Topic FROM SUBSCRIPTIONS WHERE BoardName=:board OR AuthorName=:author',
+            {"board": command[1], "author": self.current_user})
+        inform_board = False
+        inform_author = False
+        for row in cursor:
+            if row["Keyword"] in title:
+                if row["BoardName"] is not None:
+                    inform_board = True
+                else:
+                    inform_author = True
+                future = producer.send(row["Topic"],
+                                       bytes(f'*[{command[1]}] {title} – by {self.current_user}*', 'utf-8'))
+                self.info(
+                    f'*[{command[1]}] {title} – by {self.current_user}* from {self.client_address[0]}({self.client_address[1]})')
+                future.get(timeout=1)
+            if inform_board and inform_author:
+                break
 
         # Create new post
         self.conn.execute(
@@ -755,15 +778,15 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check whether subscription exists
         if board:
             cursor = self.conn.execute(
-                'SELECT ID FROM SUBSCRIPTIONS WHERE Subcriber=:username AND BoardName=:board AND Keyword=:keyword',
+                'SELECT ID FROM SUBSCRIPTIONS WHERE Subscriber=:username AND BoardName=:board AND Keyword=:keyword',
                 {"username": self.current_user, "board": board, "keyword": keyword})
         else:
             cursor = self.conn.execute(
-                'SELECT ID FROM SUBSCRIPTIONS WHERE Subcriber=:username AND AuthorName=:author AND Keyword=:keyword',
+                'SELECT ID FROM SUBSCRIPTIONS WHERE Subscriber=:username AND AuthorName=:author AND Keyword=:keyword',
                 {"username": self.current_user, "author": author, "keyword": keyword})
         if cursor.fetchone() is not None:
             self.send('Already subscribed.')
-            self.warning(f'Post id from {self.client_address[0]}({self.client_address[1]}) does not exist')
+            self.warning(f'Subscription from {self.client_address[0]}({self.client_address[1]}) is in DB')
             return
 
         # Setup subscription record in DB and tell client to subscribe
@@ -829,7 +852,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Check whether subscriptions exist
         if board:
             cursor = self.conn.execute(
-                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subcriber=:username AND BoardName=:board',
+                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subscriber=:username AND BoardName=:board',
                 {"username": self.current_user, "board": board})
             if cursor.fetchone() is None:
                 self.send(f"You haven't subscribed {board}")
@@ -837,7 +860,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                 return
         else:
             cursor = self.conn.execute(
-                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subcriber=:username AND AuthorName=:author',
+                'SELECT Topic FROM SUBSCRIPTIONS WHERE Subscriber=:username AND AuthorName=:author',
                 {"username": self.current_user, "author": author})
             if cursor.fetchone() is None:
                 self.send(f"You haven't subscribed {author}")
@@ -851,6 +874,7 @@ class ThreadedServerHandler(StreamRequestHandler):
         else:
             self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username AND AuthorName=:author',
                               {"username": self.current_user, "author": author})
+        self.conn.commit()
         self.send('Unsubscribe successfully.', '|'.join(row["Topic"] for row in cursor))
 
     def list_sub_handler(self, command):
@@ -868,7 +892,7 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Get all subscriptions of current user from DB
         cursor = self.conn.execute(
-            'SELECT BoardName, AuthorName, Keyword FROM SUBSCRIPTIONS WHERE Subcriber=:username GROUP BY BoardName, AuthorName',
+            'SELECT BoardName, AuthorName, Keyword FROM SUBSCRIPTIONS WHERE Subscriber=:username',
             {"username": self.current_user})
         boards = {}
         authors = {}

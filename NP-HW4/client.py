@@ -44,8 +44,20 @@ def response_handler(raw_res):
         subscribe_handler(res)
     elif res[0] == 'Unsubscribe successfully.\n% ':
         unsubscribe_handler(res)
+    elif res[0].startswith('Bye'):
+        logout_handler(res)
 
     return res[0], False
+
+
+def logout_handler(res):
+    """
+    Function handling logout response
+    :param res: response from server
+    :return: None
+    """
+    global consumer
+    consumer.unsubscribe()
 
 
 def subscribe_handler(res):
@@ -54,7 +66,13 @@ def subscribe_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global consumer
+    subs = consumer.subscription()
+    if subs is not None:
+        subs.add(res[1])
+        consumer.subscribe(list(subs))
+    else:
+        consumer.subscribe([res[1]])
 
 
 def unsubscribe_handler(res):
@@ -63,7 +81,15 @@ def unsubscribe_handler(res):
     :param res: response from server
     :return: None
     """
-    pass
+    global consumer
+    subs = consumer.subscription()
+    if subs is not None:
+        for s in res[1:]:
+            try:
+                subs.remove(s)
+            except KeyError:
+                pass
+        consumer.subscribe(list(subs))
 
 
 if __name__ == '__main__':
@@ -79,7 +105,7 @@ if __name__ == '__main__':
     port = args.port
 
     # Setup Kafka consumer
-    consumer = KafkaConsumer()
+    consumer = KafkaConsumer(consumer_timeout_ms=500)
 
     # Start client process
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as so:
@@ -101,6 +127,6 @@ if __name__ == '__main__':
                     consumer.poll()
                     for msg in consumer:
                         print(str(msg.value, 'utf-8'))
-                        print('% ', end='')
+                        print('% ', end='', flush=True)
         except KeyboardInterrupt:
             pass

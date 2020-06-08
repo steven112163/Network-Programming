@@ -30,6 +30,9 @@ class ThreadedServerHandler(StreamRequestHandler):
                 command = str(self.rfile.readline(), 'utf-8').strip().split()
                 if command:
                     if command[0] == 'exit':
+                        self.conn.execute('DELETE FROM SUBSCRIPTIONS WHERE Subscriber=:username',
+                                          {"username": self.current_user})
+                        self.conn.commit()
                         self.conn.close()
                         self.wfile.write(bytes('exit', 'utf-8'))
                         self.info(f'Exit from {self.client_address[0]}({self.client_address[1]})')

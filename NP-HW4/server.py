@@ -300,23 +300,19 @@ class ThreadedServerHandler(StreamRequestHandler):
         # Inform subscribers
         global producer
         cursor = self.conn.execute(
-            'SELECT BoardName, AuthorName, Keyword, Topic FROM SUBSCRIPTIONS WHERE BoardName=:board OR AuthorName=:author',
+            'SELECT Subscriber, BoardName, AuthorName, Keyword, Topic FROM SUBSCRIPTIONS WHERE BoardName=:board OR AuthorName=:author ORDER BY Subscriber',
             {"board": command[1], "author": self.current_user})
-        inform_board = False
-        inform_author = False
+        informed = []
         for row in cursor:
             if row["Keyword"] in title:
-                if row["BoardName"] is not None:
-                    inform_board = True
-                else:
-                    inform_author = True
+                if row["Subscriber"] in informed:
+                    continue
                 future = producer.send(row["Topic"],
-                                       bytes(f'*[{command[1]}] {title} – by {self.current_user}*', 'utf-8'))
+                                       bytes(f'*[{command[1]}] {title} - by {self.current_user}*', 'utf-8'))
                 self.info(
-                    f'*[{command[1]}] {title} – by {self.current_user}* from {self.client_address[0]}({self.client_address[1]})')
-                future.get(timeout=1)
-            if inform_board and inform_author:
-                break
+                    f'*[{command[1]}] {title} - by {self.current_user}* from {self.client_address[0]}({self.client_address[1]})')
+                future.get(timeout=2)
+                informed.append(row["Subscriber"])
 
         # Create new post
         self.conn.execute(
@@ -794,13 +790,13 @@ class ThreadedServerHandler(StreamRequestHandler):
 
         # Setup subscription record in DB and tell client to subscribe
         if board:
-            topic = board + keyword
+            topic = self.current_user + board + keyword
             topic = topic.replace(' ', '_')
             self.conn.execute(
                 'INSERT INTO SUBSCRIPTIONS (Subscriber, BoardName, AuthorName, Keyword, Topic) VALUES (:username, :board, :author, :keyword, :topic)',
                 {"username": self.current_user, "board": board, "author": None, "keyword": keyword, "topic": topic})
         else:
-            topic = author + keyword
+            topic = self.current_user + author + keyword
             topic = topic.replace(' ', '_')
             self.conn.execute(
                 'INSERT INTO SUBSCRIPTIONS (Subscriber, BoardName, AuthorName, Keyword, Topic) VALUES (:username, :board, :author, :keyword, :topic)',
@@ -858,7 +854,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                 'SELECT Topic FROM SUBSCRIPTIONS WHERE Subscriber=:username AND BoardName=:board',
                 {"username": self.current_user, "board": board})
             if cursor.fetchone() is None:
-                self.send(f"You haven't subscribed {board}")
+                self.send(f"You haven't subscribed {board}.")
                 self.warning(f"User from {self.client_address[0]}({self.client_address[1]}) haven't subscribe {board}")
                 return
         else:
@@ -866,7 +862,7 @@ class ThreadedServerHandler(StreamRequestHandler):
                 'SELECT Topic FROM SUBSCRIPTIONS WHERE Subscriber=:username AND AuthorName=:author',
                 {"username": self.current_user, "author": author})
             if cursor.fetchone() is None:
-                self.send(f"You haven't subscribed {author}")
+                self.send(f"You haven't subscribed {author}.")
                 self.warning(f"User from {self.client_address[0]}({self.client_address[1]}) haven't subscribe {author}")
                 return
 
@@ -1018,7 +1014,7 @@ if __name__ == '__main__':
     conn.close()
 
     # Setup Kafka producer
-    producer = KafkaProducer(bootstrap_servers='localhost:9092')
+    producer = KafkaProducer(bootstrap_servers='localhost:9092', acks='all')
 
     # Start server
     ThreadingTCPServer.allow_reuse_address = True
@@ -1030,4 +1026,5 @@ if __name__ == '__main__':
             server.serve_forever()
         except KeyboardInterrupt:
             print('')
+            producer.close()
             server.shutdown()

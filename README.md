@@ -10,7 +10,7 @@ Network Programming Spring 2020 NCTU
 * Kafka >= 2.12-2.5.0
 
 ## Submodule
-Test cases from https://git.cs.nctu.edu.tw/thlin56020/nctu_nphw3_demo.git for hw3. After cloning, run following commands:
+Test cases from https://git.cs.nctu.edu.tw/thlin56020/nctu_nphw3_demo.git for hw3 and https://git.cs.nctu.edu.tw/zhangcp/nctu_nphw4_demo.git for hw4. After cloning, run following commands:
 ```shell script
 git submodule init
 git submodule update

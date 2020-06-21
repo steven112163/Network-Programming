@@ -1,3 +1,6 @@
 [submodule "NP-HW3/test"]
 	path = NP-HW3/test
 	url = https://git.cs.nctu.edu.tw/thlin56020/nctu_nphw3_demo.git
+[submodule "NP-HW4/test"]
+	path = NP-HW4/test
+	url = https://git.cs.nctu.edu.tw/zhangcp/nctu_nphw4_demo.git
